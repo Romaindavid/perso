@@ -2,5 +2,6 @@ node_modules/
 .next/
 .env*.local
 *.tsbuildinfo
+scripts/import-psy.ts
 next-env.d.ts
 .gstack/

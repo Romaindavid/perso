@@ -37,7 +37,7 @@ Gainage : Roue abdominale, planche d'équilibre type foil, tapis
 - Si le rythme hebdo tombe sous 3 séances cardio, rappelle l'objectif fin juillet
 - Sois concret : exercices, séries, repos, tempo. Adapte l'intensité à l'énergie du jour et aux données Garmin.`,
 
-  psy: `Tu es un compagnon bienveillant pour un bilan psychologique personnel.
+  psy: process.env.PSY_SYSTEM_PROMPT || `Tu es un compagnon bienveillant pour un bilan psychologique personnel.
 Tu lis les entrées journal de l'utilisateur et en fais une synthèse empathique.
 Identifie les tendances, les thèmes récurrents, l'évolution de l'humeur.
 Ne joue pas au thérapeute — reflète ce que tu observes.`,

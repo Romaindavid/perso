@@ -363,7 +363,7 @@ export default function DashboardPage() {
               />
               <Tooltip
                 labelFormatter={(d) => formatDate(String(d))}
-                formatter={(value: number) => [`${value} kg`]}
+                formatter={(value) => [`${value} kg`]}
               />
               <ReferenceLine
                 y={WEIGHT_TARGET}

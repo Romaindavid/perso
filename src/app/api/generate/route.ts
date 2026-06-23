@@ -3,39 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { generateWithContext } from "@/lib/claude";
 import type { GenerationType } from "@/types";
 
-const SYSTEM_PROMPTS: Record<GenerationType, string> = {
-  sport: `Tu es un coach sportif personnel. Tu connais bien l'utilisateur et ses données.
-
-## Objectif
-Atteindre ventre plat d'ici fin juillet 2026 — priorité absolue : réduire la graisse abdominale.
-Objectif poids : 84,0 kg. Définition épaules et bras : objectif secondaire.
-
-## Profil athlète
-Âge : 41 ans | Taille : 1,89m | Poids actuel : ~84,8 kg
-Masse grasse : 22,4% | Masse musc. squelet. : 34,7 kg
-FC repos : 49 bpm | FC max : 188 bpm
-
-## Rythme cible
-- 3-4 séances cardio/semaine (vélo, rameur, wingfoil) — zone seuil 150-165 bpm, 30-45 min
-- 2 séances musculaires/semaine — maintien masse + définition
-- Abdos : 2-3x/semaine, jamais isolé comme seul objectif
-- Nutrition : ~140g protéines/jour, déficit modéré
-
-## Matériel disponible
-Cardio : Rameur (8 niveaux), vélo de route
-Muscu : Haltères 5kg x2, élastique porte, poignées pompes, assistant crunch
-Gainage : Roue abdominale, planche d'équilibre type foil, tapis
-
-## Routine quotidienne (DÉJÀ FAITE chaque jour — NE PAS inclure dans les séances)
-10 pompes, 10 roue abdo, 20 curls, 20 tirages face, 10 élévations latérales, 10 extensions triceps, 1 min planche
-
-## Règles
-- Ne répète JAMAIS la même séance deux fois de suite — varie les exercices
-- Ne propose pas d'équipement non disponible
-- Ne dépasse pas le temps imparti
-- La perte de graisse est globale, pas locale — pas de séances centrées sur les abdos seuls
-- Si le rythme hebdo tombe sous 3 séances cardio, rappelle l'objectif fin juillet
-- Sois concret : exercices, séries, repos, tempo. Adapte l'intensité à l'énergie du jour et aux données Garmin.`,
+const BASE_PROMPTS: Record<GenerationType, string> = {
+  sport: process.env.SPORT_SYSTEM_PROMPT || `Tu es un coach sportif personnel.
+Tu génères des séances adaptées à l'état physique actuel de l'utilisateur.
+Sois concret : exercices, séries, repos, tempo. Adapte l'intensité.`,
 
   psy: process.env.PSY_SYSTEM_PROMPT || `Tu es un compagnon bienveillant pour un bilan psychologique personnel.
 Tu lis les entrées journal de l'utilisateur et en fais une synthèse empathique.
@@ -47,12 +18,58 @@ Tu compiles les données objectives (Garmin) et les notes subjectives (journal m
 Format structuré : métriques clés, symptômes reportés, tendances.`,
 };
 
-async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typeof createClient>>) {
+function buildProfileContext(profile: Record<string, unknown> | null, type: GenerationType): string {
+  if (!profile) return "";
+
+  const parts: string[] = ["## Profil utilisateur"];
+
+  const age = profile.birth_date
+    ? Math.floor((Date.now() - new Date(profile.birth_date as string).getTime()) / 31557600000)
+    : null;
+
+  if (age) parts.push(`Âge : ${age} ans`);
+  if (profile.height_cm) parts.push(`Taille : ${(profile.height_cm as number) / 100}m`);
+  if (profile.gender) parts.push(`Genre : ${profile.gender === "male" ? "Homme" : "Femme"}`);
+  if (profile.weight_auto) parts.push(`Poids actuel : ${profile.weight_auto} kg (auto Garmin)`);
+
+  if (type === "sport" || type === "medical") {
+    if (profile.body_fat_pct) parts.push(`Masse grasse : ${profile.body_fat_pct}%`);
+    if (profile.skeletal_muscle_kg) parts.push(`Masse musc. squelettique : ${profile.skeletal_muscle_kg} kg`);
+    if (profile.hr_rest) parts.push(`FC repos : ${profile.hr_rest} bpm`);
+    if (profile.hr_max) parts.push(`FC max : ${profile.hr_max} bpm`);
+  }
+
+  if (type === "sport") {
+    if (profile.sport_goals) parts.push(`\n## Objectifs\n${profile.sport_goals}`);
+    if (profile.sport_equipment) parts.push(`\n## Matériel disponible\n${profile.sport_equipment}`);
+    if (profile.sport_routine) parts.push(`\n## Routine quotidienne (DÉJÀ FAITE — NE PAS inclure)\n${profile.sport_routine}`);
+  }
+
+  if (type === "medical") {
+    if (profile.bone_mass_kg) parts.push(`Masse osseuse : ${profile.bone_mass_kg} kg`);
+    if (profile.water_pct) parts.push(`Masse hydrique : ${profile.water_pct}%`);
+    if (profile.medical_notes) parts.push(`\n## Notes médicales\n${profile.medical_notes}`);
+  }
+
+  return parts.join("\n");
+}
+
+async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const since = new Date();
   since.setDate(since.getDate() - 14);
   const sinceStr = since.toISOString().split("T")[0];
 
   const parts: string[] = [];
+
+  // Fetch profile + latest weight
+  const [{ data: profile }, { data: latestWeight }] = await Promise.all([
+    supabase.from("user_profile").select("*").eq("id", userId).single(),
+    supabase.from("garmin_metrics").select("weight").not("weight", "is", null).order("date", { ascending: false }).limit(1).single(),
+  ]);
+
+  const profileWithWeight = profile ? { ...profile, weight_auto: latestWeight?.weight } : null;
+  const profileContext = buildProfileContext(profileWithWeight, type);
+  if (profileContext) parts.push(profileContext);
 
   if (type === "sport" || type === "medical") {
     const [{ data: activities }, { data: sleep }, { data: metrics }] = await Promise.all([
@@ -61,9 +78,9 @@ async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typ
       supabase.from("garmin_metrics").select("*").gte("date", sinceStr).order("date", { ascending: false }),
     ]);
 
-    if (activities?.length) parts.push(`Activités récentes:\n${JSON.stringify(activities, null, 2)}`);
-    if (sleep?.length) parts.push(`Sommeil récent:\n${JSON.stringify(sleep, null, 2)}`);
-    if (metrics?.length) parts.push(`Métriques:\n${JSON.stringify(metrics, null, 2)}`);
+    if (activities?.length) parts.push(`## Activités récentes\n${JSON.stringify(activities, null, 2)}`);
+    if (sleep?.length) parts.push(`## Sommeil récent\n${JSON.stringify(sleep, null, 2)}`);
+    if (metrics?.length) parts.push(`## Métriques récentes\n${JSON.stringify(metrics, null, 2)}`);
   }
 
   const categoryFilter = type === "sport"
@@ -79,7 +96,7 @@ async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typ
     .gte("created_at", since.toISOString())
     .order("created_at", { ascending: false });
 
-  if (entries?.length) parts.push(`Entrées journal:\n${JSON.stringify(entries, null, 2)}`);
+  if (entries?.length) parts.push(`## Entrées journal\n${JSON.stringify(entries, null, 2)}`);
 
   return parts.join("\n\n---\n\n");
 }
@@ -95,11 +112,11 @@ export async function POST(request: Request) {
   const body = await request.json();
   const type = body.type as GenerationType;
 
-  if (!SYSTEM_PROMPTS[type]) {
+  if (!BASE_PROMPTS[type]) {
     return NextResponse.json({ error: "Type invalide" }, { status: 400 });
   }
 
-  const context = await getContext(type, supabase);
+  const context = await getContext(type, supabase, user.id);
 
   let userMessage = context ? `Voici mon contexte:\n\n${context}` : "Je n'ai pas encore de données.";
 
@@ -115,7 +132,7 @@ export async function POST(request: Request) {
     type === "sport" ? "une séance adaptée" : type === "psy" ? "un bilan" : "un rapport médical"
   }.`;
 
-  const result = await generateWithContext(SYSTEM_PROMPTS[type], userMessage);
+  const result = await generateWithContext(BASE_PROMPTS[type], userMessage);
 
   return NextResponse.json({ result });
 }

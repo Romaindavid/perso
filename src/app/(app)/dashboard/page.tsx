@@ -13,6 +13,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 
 const WEIGHT_TARGET = 84.0;
+const MIN_ACTIVITY_MINUTES = 15;
 
 interface Metric { date: string; resting_hr: number | null; hrv: number | null; weight: number | null }
 interface Sleep { date: string; duration_hours: number; quality: string | null; deep_sleep_minutes: number | null; rem_sleep_minutes: number | null }
@@ -20,15 +21,6 @@ interface Activity { date: string; type: string; duration_minutes: number; inten
 interface JournalEntry { id: string; created_at: string; category: string; content: string }
 
 type Signal = "green" | "orange" | "red";
-
-function signal(value: number | null, avg: number | null, higherIsBetter: boolean): Signal {
-  if (value == null || avg == null) return "green";
-  const diff = higherIsBetter ? value - avg : avg - value;
-  const pct = diff / avg;
-  if (pct > 0.05) return "green";
-  if (pct > -0.05) return "orange";
-  return "red";
-}
 
 const signalColors: Record<Signal, string> = {
   green: "bg-primary/20 text-primary",
@@ -46,14 +38,58 @@ function formatDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
+const cardioTypes = ["cycling", "running", "rowing", "windsurfing_v2", "swimming", "walking", "hiking"];
 
 const activityIcons: Record<string, string> = {
   cycling: "🚴", running: "🏃", strength_training: "🏋️", windsurfing_v2: "🪁",
   walking: "🚶", hiking: "🥾", swimming: "🏊", yoga: "🧘", rowing: "🚣",
 };
+
+function getRecoverySignal(hr: number | null, avgHR: number, hrv: number | null, avgHRV: number): Signal {
+  if (hr == null && hrv == null) return "green";
+  let score = 0;
+  if (hr != null && avgHR > 0) {
+    const hrDiff = (hr - avgHR) / avgHR;
+    if (hrDiff > 0.08) score += 2;
+    else if (hrDiff > 0.03) score += 1;
+  }
+  if (hrv != null && avgHRV > 0) {
+    const hrvDiff = (avgHRV - hrv) / avgHRV;
+    if (hrvDiff > 0.08) score += 2;
+    else if (hrvDiff > 0.03) score += 1;
+  }
+  if (score >= 3) return "red";
+  if (score >= 1) return "orange";
+  return "green";
+}
+
+function getWeightSignal(weight: number | null): Signal {
+  if (weight == null) return "green";
+  if (weight <= WEIGHT_TARGET) return "green";
+  if (weight <= WEIGHT_TARGET + 1) return "orange";
+  return "red";
+}
+
+function getSleepSignal(hours: number | null): Signal {
+  if (hours == null) return "green";
+  if (hours >= 7) return "green";
+  if (hours >= 6) return "orange";
+  return "red";
+}
+
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split("T")[0];
+}
+
+function startOfWeek(weeksBack: number): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff - weeksBack * 7);
+  return d.toISOString().split("T")[0];
+}
 
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
@@ -77,9 +113,7 @@ export default function DashboardPage() {
   async function load() {
     setLoading(true);
     const supabase = createClient();
-    const since30 = new Date();
-    since30.setDate(since30.getDate() - 173);
-    const sinceStr = since30.toISOString().split("T")[0];
+    const sinceStr = daysAgo(173);
 
     const [{ data: m }, { data: s }, { data: a }, { data: j }] = await Promise.all([
       supabase.from("garmin_metrics").select("*").gte("date", sinceStr).order("date"),
@@ -97,50 +131,51 @@ export default function DashboardPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Bloc 1 computations
+  // --- Bloc 1 computations ---
   const last30Metrics = metrics.slice(-30);
   const todayMetric = metrics[metrics.length - 1];
-  const avg30HR = last30Metrics.filter(m => m.resting_hr).reduce((s, m) => s + m.resting_hr!, 0) / (last30Metrics.filter(m => m.resting_hr).length || 1);
-  const avg30HRV = last30Metrics.filter(m => m.hrv).reduce((s, m) => s + m.hrv!, 0) / (last30Metrics.filter(m => m.hrv).length || 1);
+  const metricsWithHR = last30Metrics.filter(m => m.resting_hr);
+  const metricsWithHRV = last30Metrics.filter(m => m.hrv);
+  const avg30HR = metricsWithHR.reduce((s, m) => s + m.resting_hr!, 0) / (metricsWithHR.length || 1);
+  const avg30HRV = metricsWithHRV.reduce((s, m) => s + m.hrv!, 0) / (metricsWithHRV.length || 1);
   const lastSleep = sleep[sleep.length - 1];
   const latestWeight = [...metrics].reverse().find(m => m.weight != null);
 
-  const hrSignal = signal(todayMetric?.resting_hr, avg30HR, false);
-  const hrvSignal = signal(todayMetric?.hrv, avg30HRV, true);
-  const sleepSignal: Signal = lastSleep ? (lastSleep.duration_hours >= 7 ? "green" : lastSleep.duration_hours >= 6 ? "orange" : "red") : "green";
+  const recoverySignal = getRecoverySignal(todayMetric?.resting_hr, avg30HR, todayMetric?.hrv, avg30HRV);
+  const weightSignal = getWeightSignal(latestWeight?.weight);
+  const sleepSignal = getSleepSignal(lastSleep?.duration_hours);
 
-  // Bloc 2 computations
-  const now = new Date();
-  const last7Activities = activities.filter(a => {
-    const d = new Date(a.date);
-    return (now.getTime() - d.getTime()) / 86400000 <= 7;
-  });
-  const last30Activities = activities.filter(a => {
-    const d = new Date(a.date);
-    return (now.getTime() - d.getTime()) / 86400000 <= 30;
-  });
+  const recoveryLabel = recoverySignal === "green" ? "Bonne récup" : recoverySignal === "orange" ? "Fatigue légère" : "Fatigue accumulée";
 
-  const cardioTypes = ["cycling", "running", "rowing", "windsurfing_v2", "swimming", "walking", "hiking"];
-  const cardio7 = last7Activities.filter(a => cardioTypes.includes(a.type)).length;
-  const muscu7 = last7Activities.filter(a => a.type === "strength_training").length;
-  const cardio30 = last30Activities.filter(a => cardioTypes.includes(a.type)).length;
-  const muscu30 = last30Activities.filter(a => a.type === "strength_training").length;
+  // --- Bloc 2 computations ---
+  const thisWeekStart = startOfWeek(0);
+  const lastWeekStart = startOfWeek(1);
+  const significantActivities = activities.filter(a => a.duration_minutes >= MIN_ACTIVITY_MINUTES);
+
+  const thisWeek = significantActivities.filter(a => a.date >= thisWeekStart);
+  const lastWeek = significantActivities.filter(a => a.date >= lastWeekStart && a.date < thisWeekStart);
+
+  const cardioThis = thisWeek.filter(a => cardioTypes.includes(a.type)).length;
+  const muscuThis = thisWeek.filter(a => a.type === "strength_training").length;
+  const totalThis = thisWeek.length;
+  const totalLast = lastWeek.length;
+
+  const trend = totalThis > totalLast ? "↑" : totalThis < totalLast ? "↓" : "→";
+  const trendColor = totalThis >= totalLast ? "text-primary" : "text-amber-600";
 
   const intensityCount = { low: 0, medium: 0, high: 0 };
-  last7Activities.forEach(a => {
+  thisWeek.forEach(a => {
     if (a.intensity === "low") intensityCount.low++;
     else if (a.intensity === "medium") intensityCount.medium++;
     else if (a.intensity === "high") intensityCount.high++;
   });
 
-  let chargeMessage = "";
-  if (cardio7 < 3) chargeMessage = "En dessous du rythme cible — 3 cardio/semaine minimum";
-  else if (last7Activities.length >= 6) chargeMessage = "Semaine chargée — pense à récupérer";
-  else chargeMessage = "Bon rythme cette semaine";
+  let chargeAlert: { message: string; signal: Signal } | null = null;
+  if (cardioThis < 3) {
+    chargeAlert = { message: `${cardioThis}/3 cardio — objectif fin juillet`, signal: "orange" };
+  }
 
-  const chargeSignal: Signal = cardio7 < 3 ? "orange" : last7Activities.length >= 6 ? "orange" : "green";
-
-  // Bloc 3 — weight data
+  // --- Bloc 3 weight data ---
   const weightData = metrics
     .filter(m => m.weight != null)
     .slice(weightRange === 30 ? -30 : weightRange === 90 ? -90 : 0)
@@ -150,15 +185,16 @@ export default function DashboardPage() {
       return { date: m.date, weight: m.weight, avg: Math.round(avg * 10) / 10 };
     });
 
-  // Bloc 4 — timeline
+  const weightMin = weightData.length > 0 ? Math.floor(Math.min(...weightData.map(d => Math.min(d.weight!, d.avg, WEIGHT_TARGET))) - 1) : 80;
+  const weightMax = weightData.length > 0 ? Math.ceil(Math.max(...weightData.map(d => Math.max(d.weight!, d.avg, WEIGHT_TARGET))) + 1) : 90;
+
+  // --- Bloc 4 timeline ---
   type TimelineItem = { date: string; sortKey: string; type: "activity" | "journal" | "sleep"; content: string; meta?: string; icon: string };
   const timeline: TimelineItem[] = [];
 
   activities.slice(0, 30).forEach(a => {
     timeline.push({
-      date: a.date,
-      sortKey: a.date,
-      type: "activity",
+      date: a.date, sortKey: a.date, type: "activity",
       content: `${a.type.replace(/_/g, " ")} — ${a.duration_minutes} min`,
       meta: a.intensity ? `${a.intensity} · ${a.calories} kcal` : `${a.calories} kcal`,
       icon: activityIcons[a.type] || "🏅",
@@ -168,20 +204,15 @@ export default function DashboardPage() {
   journal.forEach(j => {
     const catIcons: Record<string, string> = { sport: "🏃", psy: "🧠", medical: "🩺", quotidien: "📝" };
     timeline.push({
-      date: j.created_at.split("T")[0],
-      sortKey: j.created_at,
-      type: "journal",
+      date: j.created_at.split("T")[0], sortKey: j.created_at, type: "journal",
       content: j.content.length > 80 ? j.content.slice(0, 80) + "…" : j.content,
-      meta: j.category,
-      icon: catIcons[j.category] || "📝",
+      meta: j.category, icon: catIcons[j.category] || "📝",
     });
   });
 
   sleep.slice(-14).forEach(s => {
     timeline.push({
-      date: s.date,
-      sortKey: s.date + "T06:00:00",
-      type: "sleep",
+      date: s.date, sortKey: s.date + "T06:00:00", type: "sleep",
       content: `${s.duration_hours}h — ${s.quality || "?"}`,
       meta: s.deep_sleep_minutes ? `${s.deep_sleep_minutes} min profond · ${s.rem_sleep_minutes || 0} min REM` : undefined,
       icon: "😴",
@@ -201,109 +232,97 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
-            title="Sync Garmin"
-          >
-            <svg className={`w-5 h-5 ${syncing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.356v4.992" />
-            </svg>
-          </button>
-        </div>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
+          title="Sync Garmin"
+        >
+          <svg className={`w-5 h-5 ${syncing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.356v4.992" />
+          </svg>
+        </button>
       </div>
 
       {/* Bloc 1 — État du corps */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
         <h2 className="text-sm font-medium text-on-surface-variant">État du corps</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <div className={`rounded-2xl p-3 ${signalColors[hrSignal]}`}>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${signalDots[hrSignal]}`} />
-              <span className="text-xs font-medium">FC repos</span>
+        <div className="grid grid-cols-3 gap-3">
+          {/* Poids — priorité */}
+          <div className={`rounded-2xl p-3 ${signalColors[weightSignal]}`}>
+            <div className="flex items-center gap-1.5">
+              <div className={`w-2 h-2 rounded-full ${signalDots[weightSignal]}`} />
+              <span className="text-xs font-medium">Poids</span>
             </div>
-            <p className="text-xl font-semibold mt-1">{todayMetric?.resting_hr ?? "—"} <span className="text-xs font-normal">bpm</span></p>
-            <p className="text-xs opacity-70">moy 30j : {Math.round(avg30HR)}</p>
+            <p className="text-xl font-semibold mt-1">{latestWeight?.weight ?? "—"}<span className="text-xs font-normal ml-0.5">kg</span></p>
+            <p className="text-xs opacity-70">obj. {WEIGHT_TARGET}</p>
           </div>
 
-          <div className={`rounded-2xl p-3 ${signalColors[hrvSignal]}`}>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${signalDots[hrvSignal]}`} />
-              <span className="text-xs font-medium">HRV</span>
+          {/* Récupération — FC + HRV fusionnés */}
+          <div className={`rounded-2xl p-3 ${signalColors[recoverySignal]}`}>
+            <div className="flex items-center gap-1.5">
+              <div className={`w-2 h-2 rounded-full ${signalDots[recoverySignal]}`} />
+              <span className="text-xs font-medium">Récup</span>
             </div>
-            <p className="text-xl font-semibold mt-1">{todayMetric?.hrv ?? "—"} <span className="text-xs font-normal">ms</span></p>
-            <p className="text-xs opacity-70">moy 30j : {Math.round(avg30HRV)}</p>
+            <p className="text-sm font-semibold mt-1">{recoveryLabel}</p>
+            <p className="text-xs opacity-70 mt-0.5">FC {todayMetric?.resting_hr ?? "—"} · HRV {todayMetric?.hrv ?? "—"}</p>
           </div>
 
+          {/* Sommeil */}
           <div className={`rounded-2xl p-3 ${signalColors[sleepSignal]}`}>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <div className={`w-2 h-2 rounded-full ${signalDots[sleepSignal]}`} />
               <span className="text-xs font-medium">Sommeil</span>
             </div>
-            <p className="text-xl font-semibold mt-1">{lastSleep?.duration_hours ?? "—"} <span className="text-xs font-normal">h</span></p>
-            <p className="text-xs opacity-70">{lastSleep?.quality || "—"}</p>
-          </div>
-
-          <div className={`rounded-2xl p-3 ${latestWeight?.weight && latestWeight.weight <= WEIGHT_TARGET ? signalColors.green : latestWeight?.weight && latestWeight.weight <= WEIGHT_TARGET + 1 ? signalColors.orange : signalColors.red}`}>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${latestWeight?.weight && latestWeight.weight <= WEIGHT_TARGET ? signalDots.green : latestWeight?.weight && latestWeight.weight <= WEIGHT_TARGET + 1 ? signalDots.orange : signalDots.red}`} />
-              <span className="text-xs font-medium">Poids</span>
-            </div>
-            <p className="text-xl font-semibold mt-1">{latestWeight?.weight ?? "—"} <span className="text-xs font-normal">kg</span></p>
-            <p className="text-xs opacity-70">objectif : {WEIGHT_TARGET} kg</p>
+            <p className="text-xl font-semibold mt-1">{lastSleep?.duration_hours ?? "—"}<span className="text-xs font-normal ml-0.5">h</span></p>
+            <p className="text-xs opacity-70">{lastSleep?.quality?.toLowerCase() || "—"}</p>
           </div>
         </div>
       </div>
 
       {/* Bloc 2 — Charge d'entraînement */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
-        <h2 className="text-sm font-medium text-on-surface-variant">Charge d'entraînement</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-on-surface-variant">Cette semaine</h2>
+          <span className={`text-sm font-semibold ${trendColor}`}>
+            {trend} vs sem. préc. ({totalLast})
+          </span>
+        </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <p className="text-xs text-on-surface-variant">7 derniers jours</p>
-            <div className="flex gap-3">
-              <div>
-                <p className="text-xl font-semibold">{cardio7}</p>
-                <p className="text-xs text-on-surface-variant">cardio</p>
-              </div>
-              <div>
-                <p className="text-xl font-semibold">{muscu7}</p>
-                <p className="text-xs text-on-surface-variant">muscu</p>
-              </div>
-            </div>
+        <div className="flex gap-3">
+          <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
+            <p className="text-2xl font-semibold">{cardioThis}<span className="text-sm font-normal text-on-surface-variant">/3</span></p>
+            <p className="text-xs text-on-surface-variant">cardio</p>
           </div>
-          <div className="space-y-2">
-            <p className="text-xs text-on-surface-variant">30 derniers jours</p>
-            <div className="flex gap-3">
-              <div>
-                <p className="text-xl font-semibold">{cardio30}</p>
-                <p className="text-xs text-on-surface-variant">cardio</p>
-              </div>
-              <div>
-                <p className="text-xl font-semibold">{muscu30}</p>
-                <p className="text-xs text-on-surface-variant">muscu</p>
-              </div>
-            </div>
+          <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
+            <p className="text-2xl font-semibold">{muscuThis}<span className="text-sm font-normal text-on-surface-variant">/2</span></p>
+            <p className="text-xs text-on-surface-variant">muscu</p>
+          </div>
+          <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
+            <p className="text-2xl font-semibold">{totalThis}</p>
+            <p className="text-xs text-on-surface-variant">total</p>
           </div>
         </div>
 
         <div className="flex gap-2">
           {(["low", "medium", "high"] as const).map(level => (
-            <div key={level} className="flex-1 rounded-xl bg-surface-container p-2 text-center">
-              <p className="text-lg font-semibold">{intensityCount[level]}</p>
-              <p className="text-xs text-on-surface-variant">{level === "low" ? "basse" : level === "medium" ? "moyenne" : "haute"}</p>
+            <div key={level} className="flex-1 rounded-lg bg-surface-container px-2 py-1.5 text-center">
+              <p className="text-base font-semibold">{intensityCount[level]}</p>
+              <p className="text-xs text-on-surface-variant">{level === "low" ? "basse" : level === "medium" ? "moy." : "haute"}</p>
             </div>
           ))}
         </div>
 
-        <div className={`rounded-xl px-3 py-2 text-sm ${signalColors[chargeSignal]}`}>
-          {chargeMessage}
-        </div>
+        {chargeAlert && (
+          <div className={`rounded-xl px-3 py-2 text-sm font-medium ${signalColors[chargeAlert.signal]}`}>
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${signalDots[chargeAlert.signal]}`} />
+              {chargeAlert.message}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bloc 3 — Tendance poids */}
@@ -327,10 +346,33 @@ export default function DashboardPage() {
           </div>
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={weightData}>
-              <XAxis dataKey="date" tickFormatter={formatDate} fontSize={11} tick={{ fill: "#74796d" }} />
-              <YAxis domain={["dataMin - 1", "dataMax + 1"]} fontSize={11} tick={{ fill: "#74796d" }} />
-              <Tooltip labelFormatter={(d) => formatDate(String(d))} />
-              <ReferenceLine y={WEIGHT_TARGET} stroke="#5e8b7e" strokeDasharray="6 3" label={{ value: `${WEIGHT_TARGET}`, position: "right", fill: "#5e8b7e", fontSize: 11 }} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDate}
+                fontSize={11}
+                tick={{ fill: "#74796d" }}
+                interval="preserveStartEnd"
+                minTickGap={40}
+              />
+              <YAxis
+                domain={[weightMin, weightMax]}
+                ticks={Array.from({ length: weightMax - weightMin + 1 }, (_, i) => weightMin + i)}
+                fontSize={11}
+                tick={{ fill: "#74796d" }}
+                unit=" kg"
+              />
+              <Tooltip
+                labelFormatter={(d) => formatDate(String(d))}
+                formatter={(value: number) => [`${value} kg`]}
+              />
+              <ReferenceLine
+                y={WEIGHT_TARGET}
+                stroke="#5e8b7e"
+                strokeDasharray="6 3"
+                strokeWidth={1.5}
+              >
+                <label value={`Objectif ${WEIGHT_TARGET} kg`} position="insideTopRight" fill="#5e8b7e" fontSize={11} />
+              </ReferenceLine>
               <Line dataKey="weight" stroke="#c4c8ba" strokeWidth={1} dot={{ r: 2, fill: "#c4c8ba" }} name="Poids" />
               <Line dataKey="avg" stroke="#5e8b7e" strokeWidth={2} dot={false} name="Moy. 7j" />
             </LineChart>

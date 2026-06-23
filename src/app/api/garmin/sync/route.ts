@@ -64,7 +64,7 @@ export async function POST(request: Request) {
           duration_hours: Math.round((ds.sleepTimeSeconds / 3600) * 100) / 100,
           deep_sleep_minutes: ds.deepSleepSeconds ? Math.round(ds.deepSleepSeconds / 60) : null,
           rem_sleep_minutes: ds.remSleepSeconds ? Math.round(ds.remSleepSeconds / 60) : null,
-          quality: ds.sleepScoreQualifier || null,
+          quality: (ds as any).sleepScoreQualifier || null,
         }, { onConflict: "user_id,date" });
         stats.sleep++;
       }

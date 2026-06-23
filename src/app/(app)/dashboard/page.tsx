@@ -370,9 +370,8 @@ export default function DashboardPage() {
                 stroke="#5e8b7e"
                 strokeDasharray="6 3"
                 strokeWidth={1.5}
-              >
-                <label value={`Objectif ${WEIGHT_TARGET} kg`} position="insideTopRight" fill="#5e8b7e" fontSize={11} />
-              </ReferenceLine>
+                label={{ value: `Objectif ${WEIGHT_TARGET} kg`, position: "insideTopRight", fill: "#5e8b7e", fontSize: 11 }}
+              />
               <Line dataKey="weight" stroke="#c4c8ba" strokeWidth={1} dot={{ r: 2, fill: "#c4c8ba" }} name="Poids" />
               <Line dataKey="avg" stroke="#5e8b7e" strokeWidth={2} dot={false} name="Moy. 7j" />
             </LineChart>

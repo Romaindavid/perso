@@ -1,39 +1,42 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+async function getGarminAutoData(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const [{ data: latestWeight }, { data: latestMetric }] = await Promise.all([
+    supabase
+      .from("garmin_metrics")
+      .select("weight, date")
+      .not("weight", "is", null)
+      .order("date", { ascending: false })
+      .limit(1)
+      .single(),
+    supabase
+      .from("garmin_metrics")
+      .select("resting_hr, hrv, date")
+      .not("resting_hr", "is", null)
+      .order("date", { ascending: false })
+      .limit(1)
+      .single(),
+  ]);
+
+  return {
+    weight_auto: latestWeight?.weight || null,
+    weight_date: latestWeight?.date || null,
+    hr_rest_auto: latestMetric?.resting_hr || null,
+    hrv_auto: latestMetric?.hrv || null,
+    metrics_date: latestMetric?.date || null,
+  };
+}
+
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
+  const garmin = await getGarminAutoData(supabase);
   const { data } = await supabase.from("user_profile").select("*").eq("id", user.id).single();
 
-  if (!data) {
-    // Auto-fetch latest weight from garmin_metrics
-    const { data: latestWeight } = await supabase
-      .from("garmin_metrics")
-      .select("weight")
-      .not("weight", "is", null)
-      .order("date", { ascending: false })
-      .limit(1)
-      .single();
-
-    return NextResponse.json({
-      id: user.id,
-      weight_auto: latestWeight?.weight || null,
-    });
-  }
-
-  // Attach latest auto weight
-  const { data: latestWeight } = await supabase
-    .from("garmin_metrics")
-    .select("weight")
-    .not("weight", "is", null)
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
-
-  return NextResponse.json({ ...data, weight_auto: latestWeight?.weight || null });
+  return NextResponse.json({ ...(data || { id: user.id }), ...garmin });
 }
 
 export async function PUT(request: Request) {

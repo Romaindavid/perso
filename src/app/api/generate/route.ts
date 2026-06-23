@@ -35,8 +35,10 @@ function buildProfileContext(profile: Record<string, unknown> | null, type: Gene
   if (type === "sport" || type === "medical") {
     if (profile.body_fat_pct) parts.push(`Masse grasse : ${profile.body_fat_pct}%`);
     if (profile.skeletal_muscle_kg) parts.push(`Masse musc. squelettique : ${profile.skeletal_muscle_kg} kg`);
-    if (profile.hr_rest) parts.push(`FC repos : ${profile.hr_rest} bpm`);
+    const hrRest = profile.hr_rest_auto || profile.hr_rest;
+    if (hrRest) parts.push(`FC repos : ${hrRest} bpm (${profile.hr_rest_auto ? "auto Garmin" : "manuel"})`);
     if (profile.hr_max) parts.push(`FC max : ${profile.hr_max} bpm`);
+    if (profile.hrv_auto) parts.push(`HRV : ${profile.hrv_auto} ms (auto Garmin)`);
   }
 
   if (type === "sport") {
@@ -61,14 +63,20 @@ async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typ
 
   const parts: string[] = [];
 
-  // Fetch profile + latest weight
-  const [{ data: profile }, { data: latestWeight }] = await Promise.all([
+  // Fetch profile + latest Garmin data
+  const [{ data: profile }, { data: latestWeight }, { data: latestMetric }] = await Promise.all([
     supabase.from("user_profile").select("*").eq("id", userId).single(),
     supabase.from("garmin_metrics").select("weight").not("weight", "is", null).order("date", { ascending: false }).limit(1).single(),
+    supabase.from("garmin_metrics").select("resting_hr, hrv").not("resting_hr", "is", null).order("date", { ascending: false }).limit(1).single(),
   ]);
 
-  const profileWithWeight = profile ? { ...profile, weight_auto: latestWeight?.weight } : null;
-  const profileContext = buildProfileContext(profileWithWeight, type);
+  const profileWithAuto = profile ? {
+    ...profile,
+    weight_auto: latestWeight?.weight,
+    hr_rest_auto: latestMetric?.resting_hr,
+    hrv_auto: latestMetric?.hrv,
+  } : null;
+  const profileContext = buildProfileContext(profileWithAuto, type);
   if (profileContext) parts.push(profileContext);
 
   if (type === "sport" || type === "medical") {

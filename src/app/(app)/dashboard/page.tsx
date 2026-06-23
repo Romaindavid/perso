@@ -142,8 +142,8 @@ export default function DashboardPage() {
   const latestWeight = [...metrics].reverse().find(m => m.weight != null);
 
   const recoverySignal = getRecoverySignal(todayMetric?.resting_hr, avg30HR, todayMetric?.hrv, avg30HRV);
-  const weightSignal = getWeightSignal(latestWeight?.weight);
-  const sleepSignal = getSleepSignal(lastSleep?.duration_hours);
+  const weightSignal = getWeightSignal(latestWeight?.weight ?? null);
+  const sleepSignal = getSleepSignal(lastSleep?.duration_hours ?? null);
 
   const recoveryLabel = recoverySignal === "green" ? "Bonne récup" : recoverySignal === "orange" ? "Fatigue légère" : "Fatigue accumulée";
 

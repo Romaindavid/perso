@@ -150,22 +150,27 @@ export default function DashboardPage() {
   // --- Bloc 2 computations ---
   const thisWeekStart = startOfWeek(0);
   const lastWeekStart = startOfWeek(1);
-  const significantActivities = activities.filter(a => a.duration_minutes >= MIN_ACTIVITY_MINUTES);
+  const allThisWeek = activities.filter(a => a.date >= thisWeekStart);
+  const allLastWeek = activities.filter(a => a.date >= lastWeekStart && a.date < thisWeekStart);
 
-  const thisWeek = significantActivities.filter(a => a.date >= thisWeekStart);
-  const lastWeek = significantActivities.filter(a => a.date >= lastWeekStart && a.date < thisWeekStart);
+  const isRoutine = (a: Activity) => a.type === "strength_training" && a.duration_minutes < 10;
+  const isMuscu = (a: Activity) => a.type === "strength_training" && a.duration_minutes >= 10;
 
-  const cardioThis = thisWeek.filter(a => cardioTypes.includes(a.type)).length;
-  const muscuThis = thisWeek.filter(a => a.type === "strength_training").length;
-  const totalThis = thisWeek.length;
-  const totalLast = lastWeek.length;
+  const routineThis = allThisWeek.filter(isRoutine).length;
+  const muscuThis = allThisWeek.filter(isMuscu).length;
+  const cardioThis = allThisWeek.filter(a => cardioTypes.includes(a.type)).length;
+
+  const significantThis = allThisWeek.filter(a => a.duration_minutes >= MIN_ACTIVITY_MINUTES);
+  const significantLast = allLastWeek.filter(a => a.duration_minutes >= MIN_ACTIVITY_MINUTES);
+  const totalThis = significantThis.length;
+  const totalLast = significantLast.length;
 
   const trend = totalThis > totalLast ? "↑" : totalThis < totalLast ? "↓" : "→";
   const trendColor = totalThis >= totalLast ? "text-primary" : "text-amber-600";
-  const showIntensity = thisWeek.length >= 3;
+  const showIntensity = significantThis.length >= 3;
 
   const intensityCount = { low: 0, medium: 0, high: 0 };
-  thisWeek.forEach(a => {
+  significantThis.forEach(a => {
     if (a.intensity === "low") intensityCount.low++;
     else if (a.intensity === "medium") intensityCount.medium++;
     else if (a.intensity === "high") intensityCount.high++;
@@ -292,20 +297,18 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="flex gap-3">
-          <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
+        <div className="flex gap-2">
+          <div className="flex-1 rounded-xl bg-surface-container p-2.5 text-center">
             <p className="text-2xl font-semibold">{cardioThis}<span className="text-sm font-normal text-on-surface-variant">/3</span></p>
             <p className="text-xs text-on-surface-variant">cardio</p>
-            <p className="text-[10px] text-outline">objectif : 3</p>
           </div>
-          <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
-            <p className="text-2xl font-semibold">{muscuThis}<span className="text-sm font-normal text-on-surface-variant">/2</span></p>
+          <div className="flex-1 rounded-xl bg-surface-container p-2.5 text-center">
+            <p className="text-2xl font-semibold">{muscuThis}</p>
             <p className="text-xs text-on-surface-variant">muscu</p>
-            <p className="text-[10px] text-outline">objectif : 2</p>
           </div>
-          <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
-            <p className="text-2xl font-semibold">{totalThis}</p>
-            <p className="text-xs text-on-surface-variant">total</p>
+          <div className="flex-1 rounded-xl bg-surface-container p-2.5 text-center">
+            <p className="text-2xl font-semibold">{routineThis}<span className="text-sm font-normal text-on-surface-variant">/7</span></p>
+            <p className="text-xs text-on-surface-variant">routine</p>
           </div>
         </div>
 

@@ -162,6 +162,7 @@ export default function DashboardPage() {
 
   const trend = totalThis > totalLast ? "↑" : totalThis < totalLast ? "↓" : "→";
   const trendColor = totalThis >= totalLast ? "text-primary" : "text-amber-600";
+  const showIntensity = thisWeek.length >= 3;
 
   const intensityCount = { low: 0, medium: 0, high: 0 };
   thisWeek.forEach(a => {
@@ -176,9 +177,9 @@ export default function DashboardPage() {
   }
 
   // --- Bloc 3 weight data ---
+  const weightSince = weightRange === 173 ? "2026-01-01" : daysAgo(weightRange);
   const weightData = metrics
-    .filter(m => m.weight != null)
-    .slice(weightRange === 30 ? -30 : weightRange === 90 ? -90 : 0)
+    .filter(m => m.weight != null && m.date >= weightSince)
     .map((m, i, arr) => {
       const window = arr.slice(Math.max(0, i - 6), i + 1);
       const avg = window.reduce((s, w) => s + w.weight!, 0) / window.length;
@@ -287,7 +288,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-on-surface-variant">Cette semaine</h2>
           <span className={`text-sm font-semibold ${trendColor}`}>
-            {trend} vs sem. préc. ({totalLast})
+            {trend} vs sem. préc. : {totalLast} séance{totalLast > 1 ? "s" : ""}
           </span>
         </div>
 
@@ -295,10 +296,12 @@ export default function DashboardPage() {
           <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
             <p className="text-2xl font-semibold">{cardioThis}<span className="text-sm font-normal text-on-surface-variant">/3</span></p>
             <p className="text-xs text-on-surface-variant">cardio</p>
+            <p className="text-[10px] text-outline">objectif : 3</p>
           </div>
           <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
             <p className="text-2xl font-semibold">{muscuThis}<span className="text-sm font-normal text-on-surface-variant">/2</span></p>
             <p className="text-xs text-on-surface-variant">muscu</p>
+            <p className="text-[10px] text-outline">objectif : 2</p>
           </div>
           <div className="flex-1 rounded-xl bg-surface-container p-3 text-center">
             <p className="text-2xl font-semibold">{totalThis}</p>
@@ -306,14 +309,16 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          {(["low", "medium", "high"] as const).map(level => (
-            <div key={level} className="flex-1 rounded-lg bg-surface-container px-2 py-1.5 text-center">
-              <p className="text-base font-semibold">{intensityCount[level]}</p>
-              <p className="text-xs text-on-surface-variant">{level === "low" ? "basse" : level === "medium" ? "moy." : "haute"}</p>
-            </div>
-          ))}
-        </div>
+        {showIntensity && (
+          <div className="flex gap-2">
+            {(["low", "medium", "high"] as const).map(level => (
+              <div key={level} className="flex-1 rounded-lg bg-surface-container px-2 py-1.5 text-center">
+                <p className="text-base font-semibold">{intensityCount[level]}</p>
+                <p className="text-xs text-on-surface-variant">{level === "low" ? "basse" : level === "medium" ? "moy." : "haute"}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {chargeAlert && (
           <div className={`rounded-xl px-3 py-2 text-sm font-medium ${signalColors[chargeAlert.signal]}`}>

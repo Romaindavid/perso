@@ -71,10 +71,14 @@ export async function POST(request: Request) {
     } catch { /* skip day */ }
   }
 
-  // Sync metrics (HR, weight)
+  // Sync metrics (HR, weight, body composition)
   const metricsDays = daysBetween(lastMetrics, today);
   for (const day of metricsDays) {
-    const m: Record<string, any> = { user_id: user.id, date: day, resting_hr: null, hrv: null, weight: null };
+    const m: Record<string, any> = {
+      user_id: user.id, date: day,
+      resting_hr: null, hrv: null, weight: null,
+      body_fat_pct: null, muscle_mass_kg: null, bone_mass_kg: null, water_pct: null,
+    };
     try {
       const hr = await GCClient.getHeartRate(new Date(day));
       if (hr?.restingHeartRate) m.resting_hr = hr.restingHeartRate;
@@ -82,6 +86,10 @@ export async function POST(request: Request) {
     try {
       const w = await GCClient.getDailyWeightData(new Date(day));
       if (w?.totalAverage?.weight) m.weight = Math.round(w.totalAverage.weight / 1000 * 10) / 10;
+      if (w?.totalAverage?.bodyFat) m.body_fat_pct = Math.round(w.totalAverage.bodyFat * 10) / 10;
+      if (w?.totalAverage?.muscleMass) m.muscle_mass_kg = Math.round(w.totalAverage.muscleMass / 1000 * 10) / 10;
+      if (w?.totalAverage?.boneMass) m.bone_mass_kg = Math.round(w.totalAverage.boneMass / 1000 * 10) / 10;
+      if (w?.totalAverage?.bodyWater) m.water_pct = Math.round(w.totalAverage.bodyWater * 10) / 10;
     } catch { /* skip */ }
     if (m.resting_hr || m.weight) {
       await supabase.from("garmin_metrics").upsert(m, { onConflict: "user_id,date" });

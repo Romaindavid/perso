@@ -22,6 +22,11 @@ interface Profile {
   hr_rest_auto: number | null;
   hrv_auto: number | null;
   metrics_date: string | null;
+  body_fat_auto: number | null;
+  muscle_mass_auto: number | null;
+  bone_mass_auto: number | null;
+  water_pct_auto: number | null;
+  body_date: string | null;
 }
 
 const defaultProfile: Profile = {
@@ -30,6 +35,7 @@ const defaultProfile: Profile = {
   hr_rest: null, hr_max: null,
   sport_goals: "", sport_equipment: "", sport_routine: "", medical_notes: "", psy_context: "",
   weight_auto: null, weight_date: null, hr_rest_auto: null, hrv_auto: null, metrics_date: null,
+  body_fat_auto: null, muscle_mass_auto: null, bone_mass_auto: null, water_pct_auto: null, body_date: null,
 };
 
 function AutoBadge({ date }: { date: string | null }) {
@@ -153,6 +159,14 @@ export default function ProfilePage() {
           <AutoCard label="FC repos" value={profile.hr_rest_auto} unit="bpm" date={profile.metrics_date} />
           <AutoCard label="HRV" value={profile.hrv_auto} unit="ms" date={profile.metrics_date} />
         </div>
+        {(profile.body_fat_auto || profile.muscle_mass_auto || profile.bone_mass_auto || profile.water_pct_auto) && (
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <AutoCard label="Masse grasse" value={profile.body_fat_auto} unit="%" date={profile.body_date} />
+            <AutoCard label="Masse musc." value={profile.muscle_mass_auto} unit="kg" date={profile.body_date} />
+            <AutoCard label="Masse osseuse" value={profile.bone_mass_auto} unit="kg" date={profile.body_date} />
+            <AutoCard label="Hydratation" value={profile.water_pct_auto} unit="%" date={profile.body_date} />
+          </div>
+        )}
       </div>
 
       {/* Identité */}
@@ -183,25 +197,27 @@ export default function ProfilePage() {
         </Field>
       </div>
 
-      {/* Composition corporelle (manuel) */}
-      <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
-        <h2 className="text-sm font-medium text-on-surface-variant">Composition corporelle</h2>
-        <p className="text-xs text-outline">Saisie manuelle — balance ou mesure en cabinet</p>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Masse grasse">
-            <NumberInput value={profile.body_fat_pct} onChange={(v) => update("body_fat_pct", v)} unit="%" />
-          </Field>
-          <Field label="Masse musc. squelettique">
-            <NumberInput value={profile.skeletal_muscle_kg} onChange={(v) => update("skeletal_muscle_kg", v)} unit="kg" />
-          </Field>
-          <Field label="Masse osseuse">
-            <NumberInput value={profile.bone_mass_kg} onChange={(v) => update("bone_mass_kg", v)} unit="kg" />
-          </Field>
-          <Field label="Masse hydrique">
-            <NumberInput value={profile.water_pct} onChange={(v) => update("water_pct", v)} unit="%" />
-          </Field>
+      {/* Composition corporelle (manuel — fallback si pas de données Garmin) */}
+      {!profile.body_fat_auto && (
+        <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
+          <h2 className="text-sm font-medium text-on-surface-variant">Composition corporelle</h2>
+          <p className="text-xs text-outline">Pas encore de données balance Garmin — saisie manuelle</p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Masse grasse">
+              <NumberInput value={profile.body_fat_pct} onChange={(v) => update("body_fat_pct", v)} unit="%" />
+            </Field>
+            <Field label="Masse musc. squelettique">
+              <NumberInput value={profile.skeletal_muscle_kg} onChange={(v) => update("skeletal_muscle_kg", v)} unit="kg" />
+            </Field>
+            <Field label="Masse osseuse">
+              <NumberInput value={profile.bone_mass_kg} onChange={(v) => update("bone_mass_kg", v)} unit="kg" />
+            </Field>
+            <Field label="Masse hydrique">
+              <NumberInput value={profile.water_pct} onChange={(v) => update("water_pct", v)} unit="%" />
+            </Field>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Cardio (manuel) */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">

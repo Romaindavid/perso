@@ -33,12 +33,14 @@ function buildProfileContext(profile: Record<string, unknown> | null, type: Gene
   if (profile.weight_auto) parts.push(`Poids actuel : ${profile.weight_auto} kg (auto Garmin)`);
 
   if (type === "sport" || type === "medical") {
-    if (profile.body_fat_pct) parts.push(`Masse grasse : ${profile.body_fat_pct}%`);
-    if (profile.skeletal_muscle_kg) parts.push(`Masse musc. squelettique : ${profile.skeletal_muscle_kg} kg`);
+    const bodyFat = profile.body_fat_auto || profile.body_fat_pct;
+    const muscleMass = profile.muscle_mass_auto || profile.skeletal_muscle_kg;
+    if (bodyFat) parts.push(`Masse grasse : ${bodyFat}%`);
+    if (muscleMass) parts.push(`Masse musc. squelettique : ${muscleMass} kg`);
     const hrRest = profile.hr_rest_auto || profile.hr_rest;
-    if (hrRest) parts.push(`FC repos : ${hrRest} bpm (${profile.hr_rest_auto ? "auto Garmin" : "manuel"})`);
+    if (hrRest) parts.push(`FC repos : ${hrRest} bpm`);
     if (profile.hr_max) parts.push(`FC max : ${profile.hr_max} bpm`);
-    if (profile.hrv_auto) parts.push(`HRV : ${profile.hrv_auto} ms (auto Garmin)`);
+    if (profile.hrv_auto) parts.push(`HRV : ${profile.hrv_auto} ms`);
   }
 
   if (type === "sport") {
@@ -48,8 +50,10 @@ function buildProfileContext(profile: Record<string, unknown> | null, type: Gene
   }
 
   if (type === "medical") {
-    if (profile.bone_mass_kg) parts.push(`Masse osseuse : ${profile.bone_mass_kg} kg`);
-    if (profile.water_pct) parts.push(`Masse hydrique : ${profile.water_pct}%`);
+    const boneMass = profile.bone_mass_auto || profile.bone_mass_kg;
+    const waterPct = profile.water_pct_auto || profile.water_pct;
+    if (boneMass) parts.push(`Masse osseuse : ${boneMass} kg`);
+    if (waterPct) parts.push(`Masse hydrique : ${waterPct}%`);
     if (profile.medical_notes) parts.push(`\n## Notes médicales\n${profile.medical_notes}`);
   }
 
@@ -64,10 +68,11 @@ async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typ
   const parts: string[] = [];
 
   // Fetch profile + latest Garmin data
-  const [{ data: profile }, { data: latestWeight }, { data: latestMetric }] = await Promise.all([
+  const [{ data: profile }, { data: latestWeight }, { data: latestMetric }, { data: latestBody }] = await Promise.all([
     supabase.from("user_profile").select("*").eq("id", userId).single(),
     supabase.from("garmin_metrics").select("weight").not("weight", "is", null).order("date", { ascending: false }).limit(1).single(),
     supabase.from("garmin_metrics").select("resting_hr, hrv").not("resting_hr", "is", null).order("date", { ascending: false }).limit(1).single(),
+    supabase.from("garmin_metrics").select("body_fat_pct, muscle_mass_kg, bone_mass_kg, water_pct").not("body_fat_pct", "is", null).order("date", { ascending: false }).limit(1).single(),
   ]);
 
   const profileWithAuto = profile ? {
@@ -75,6 +80,10 @@ async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typ
     weight_auto: latestWeight?.weight,
     hr_rest_auto: latestMetric?.resting_hr,
     hrv_auto: latestMetric?.hrv,
+    body_fat_auto: latestBody?.body_fat_pct,
+    muscle_mass_auto: latestBody?.muscle_mass_kg,
+    bone_mass_auto: latestBody?.bone_mass_kg,
+    water_pct_auto: latestBody?.water_pct,
   } : null;
   const profileContext = buildProfileContext(profileWithAuto, type);
   if (profileContext) parts.push(profileContext);

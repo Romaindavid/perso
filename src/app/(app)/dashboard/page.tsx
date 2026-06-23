@@ -27,9 +27,21 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<7 | 14 | 30>(7);
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
-    async function load() {
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/garmin/sync", { method: "POST" });
+      const result = await res.json();
+      if (result.ok) {
+        load();
+      }
+    } catch { /* ignore */ }
+    setSyncing(false);
+  }
+
+  async function load() {
       setLoading(true);
       const supabase = createClient();
       const since = new Date();
@@ -103,7 +115,9 @@ export default function DashboardPage() {
         )
       );
       setLoading(false);
-    }
+  }
+
+  useEffect(() => {
     load();
   }, [range]);
 
@@ -115,7 +129,19 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
+            title="Sync Garmin"
+          >
+            <svg className={`w-5 h-5 ${syncing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.356v4.992" />
+            </svg>
+          </button>
+        </div>
         <div className="flex gap-1 bg-surface-container rounded-full p-1">
           {([7, 14, 30] as const).map((r) => (
             <button

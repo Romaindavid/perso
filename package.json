@@ -27,5 +27,9 @@
     "recharts": "^3.8.1",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^12.11.1",
+    "tsx": "^4.22.4"
   }
 }

@@ -113,6 +113,15 @@ export default function DashboardPage() {
   const sleepMinutes = lastSleep ? Math.round((lastSleep.duration_hours % 1) * 60) : null;
   const sleepQuality = lastSleep?.quality?.toLowerCase() || null;
 
+  // Humeur from recent journal
+  const recentJournal = journal.filter(j => {
+    const d = new Date(j.created_at);
+    return (Date.now() - d.getTime()) / 86400000 <= 7;
+  });
+  const hasRecentPsy = recentJournal.some(j => j.category === "psy" || j.category === "quotidien");
+  const moodEmoji = hasRecentPsy ? "😊" : "—";
+  const moodLabel = hasRecentPsy ? "Stable" : "Pas de donnée";
+
   const last30 = metrics.slice(-30);
   const todayMetric = metrics[metrics.length - 1];
   const metricsWithHR = last30.filter(m => m.resting_hr);

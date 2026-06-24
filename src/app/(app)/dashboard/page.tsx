@@ -117,14 +117,18 @@ export default function DashboardPage() {
   const sleepMinutes = lastSleep ? Math.round((lastSleep.duration_hours % 1) * 60) : null;
   const sleepQuality = lastSleep?.quality?.toLowerCase() || null;
 
-  // Humeur from recent journal
-  const recentJournal = journal.filter(j => {
-    const d = new Date(j.created_at);
-    return (Date.now() - d.getTime()) / 86400000 <= 7;
-  });
-  const hasRecentPsy = recentJournal.some(j => j.category === "psy" || j.category === "quotidien");
-  const moodEmoji = hasRecentPsy ? "😊" : "—";
-  const moodLabel = hasRecentPsy ? "Stable" : "Pas de donnée";
+  // Humeur from most recent journal entry with mood
+  const moodMap: Record<string, { emoji: string; label: string }> = {
+    super: { emoji: "😄", label: "Super" },
+    bien: { emoji: "🙂", label: "Bien" },
+    neutre: { emoji: "😐", label: "Neutre" },
+    irritable: { emoji: "😤", label: "Irritable" },
+    anxieux: { emoji: "😰", label: "Anxieux" },
+  };
+  const latestMoodEntry = journal.find((j: any) => j.mood && j.category === "quotidien");
+  const latestMood = latestMoodEntry ? moodMap[(latestMoodEntry as any).mood] : null;
+  const moodEmoji = latestMood?.emoji || "—";
+  const moodLabel = latestMood?.label || "Pas de donnée";
 
   const last30 = metrics.slice(-30);
   const todayMetric = metrics[metrics.length - 1];

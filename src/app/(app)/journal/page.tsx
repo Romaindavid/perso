@@ -2,121 +2,318 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { JournalCategory, JournalEntry } from "@/types";
+import type { JournalCategory } from "@/types";
+
+interface JournalEntry {
+  id: string;
+  created_at: string;
+  category: string;
+  content: string;
+  mood: string | null;
+}
+
+interface Activity {
+  date: string;
+  type: string;
+  duration_minutes: number;
+  intensity: string | null;
+  calories: number;
+}
+
+interface Sleep {
+  date: string;
+  duration_hours: number;
+  quality: string | null;
+}
 
 const categories: { value: JournalCategory; label: string; emoji: string }[] = [
+  { value: "quotidien", label: "Quotidien", emoji: "📝" },
   { value: "sport", label: "Sport", emoji: "🏃" },
   { value: "psy", label: "Psy", emoji: "🧠" },
   { value: "medical", label: "Médical", emoji: "🩺" },
-  { value: "quotidien", label: "Quotidien", emoji: "📝" },
 ];
+
+const moods = [
+  { value: "super", emoji: "😄", label: "Super" },
+  { value: "bien", emoji: "🙂", label: "Bien" },
+  { value: "neutre", emoji: "😐", label: "Neutre" },
+  { value: "irritable", emoji: "😤", label: "Irritable" },
+  { value: "anxieux", emoji: "😰", label: "Anxieux" },
+];
+
+const activityIcons: Record<string, string> = {
+  cycling: "🚴", running: "🏃", strength_training: "🏋️", windsurfing_v2: "🪁",
+  walking: "🚶", hiking: "🥾", swimming: "🏊", yoga: "🧘", rowing: "🚣",
+};
+
+function localDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatDate(d: string) {
+  return new Date(d + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+type TimelineItem = {
+  date: string;
+  sortKey: string;
+  type: "activity" | "journal" | "sleep";
+  icon: string;
+  title: string;
+  subtitle?: string;
+  mood?: string | null;
+  content?: string;
+};
 
 export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [content, setContent] = useState("");
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [sleepData, setSleepData] = useState<Sleep[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Form state
+  const [showForm, setShowForm] = useState(false);
   const [category, setCategory] = useState<JournalCategory>("quotidien");
+  const [content, setContent] = useState("");
+  const [mood, setMood] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const supabase = createClient();
 
-  useEffect(() => {
-    loadEntries();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
-  async function loadEntries() {
-    const { data } = await supabase
-      .from("journal_entries")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(20);
-    if (data) setEntries(data);
+  async function loadAll() {
+    setLoading(true);
+    const [{ data: j }, { data: a }, { data: s }] = await Promise.all([
+      supabase.from("journal_entries").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase.from("garmin_activities").select("*").order("date", { ascending: false }).limit(100),
+      supabase.from("garmin_sleep").select("*").order("date", { ascending: false }).limit(60),
+    ]);
+    setEntries(j || []);
+    setActivities(a || []);
+    setSleepData(s || []);
+    setLoading(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!content.trim()) return;
+    if (!content.trim() && !mood) return;
 
     setSaving(true);
-    const { error } = await supabase
-      .from("journal_entries")
-      .insert({ content: content.trim(), category });
+    const payload: Record<string, unknown> = {
+      content: content.trim(),
+      category,
+    };
+    if (category === "quotidien" && mood) {
+      payload.mood = mood;
+    }
 
+    const { error } = await supabase.from("journal_entries").insert(payload);
     if (!error) {
       setContent("");
-      await loadEntries();
+      setMood(null);
+      setShowForm(false);
+      await loadAll();
     }
     setSaving(false);
   }
 
-  const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString("fr-FR", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
+  // Build timeline
+  const timeline: TimelineItem[] = [];
+
+  entries.forEach(j => {
+    const catInfo = categories.find(c => c.value === j.category);
+    const moodInfo = j.mood ? moods.find(m => m.value === j.mood) : null;
+    timeline.push({
+      date: j.created_at.split("T")[0],
+      sortKey: j.created_at,
+      type: "journal",
+      icon: moodInfo?.emoji || catInfo?.emoji || "📝",
+      title: catInfo?.label || j.category,
+      subtitle: formatTime(j.created_at),
+      mood: j.mood,
+      content: j.content,
     });
-  };
+  });
+
+  activities.forEach(a => {
+    const label = a.type.replace(/_/g, " ");
+    timeline.push({
+      date: a.date,
+      sortKey: a.date + "T12:00:00",
+      type: "activity",
+      icon: activityIcons[a.type] || "🏅",
+      title: label.charAt(0).toUpperCase() + label.slice(1),
+      subtitle: `${a.duration_minutes} min${a.intensity ? ` · ${a.intensity}` : ""} · ${a.calories} kcal`,
+    });
+  });
+
+  sleepData.forEach(s => {
+    const h = Math.floor(s.duration_hours);
+    const m = Math.round((s.duration_hours % 1) * 60);
+    timeline.push({
+      date: s.date,
+      sortKey: s.date + "T06:00:00",
+      type: "sleep",
+      icon: "😴",
+      title: `${h}h${m ? String(m).padStart(2, "0") : ""} de sommeil`,
+      subtitle: s.quality?.toLowerCase() || undefined,
+    });
+  });
+
+  timeline.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+
+  // Group by date
+  const grouped = new Map<string, TimelineItem[]>();
+  timeline.forEach(item => {
+    const existing = grouped.get(item.date) || [];
+    existing.push(item);
+    grouped.set(item.date, existing);
+  });
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Journal</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight">Journal</h1>
+        {!showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-semibold"
+          >
+            + Nouvelle entrée
+          </button>
+        )}
+      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex gap-2 flex-wrap">
-          {categories.map((cat) => (
-            <button
-              key={cat.value}
-              type="button"
-              onClick={() => setCategory(cat.value)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                category === cat.value
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface-container text-on-surface-variant"
-              }`}
-            >
-              {cat.emoji} {cat.label}
-            </button>
-          ))}
-        </div>
+      {/* Form */}
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-4">
+          {/* Categories */}
+          <div className="flex gap-2 flex-wrap">
+            {categories.map((cat) => (
+              <button
+                key={cat.value}
+                type="button"
+                onClick={() => setCategory(cat.value)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  category === cat.value
+                    ? "bg-primary text-on-primary"
+                    : "bg-surface-container text-on-surface-variant"
+                }`}
+              >
+                {cat.emoji} {cat.label}
+              </button>
+            ))}
+          </div>
 
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Comment tu te sens ?"
-          rows={4}
-          className="w-full bg-surface-container-low border border-outline-variant rounded-2xl px-4 py-3 text-base placeholder:text-outline resize-none focus:outline-none focus:border-primary transition-colors"
-        />
-
-        <button
-          type="submit"
-          disabled={saving || !content.trim()}
-          className="w-full bg-primary text-on-primary py-3 rounded-full font-medium text-base disabled:opacity-50 transition-opacity"
-        >
-          {saving ? "Enregistrement..." : "Enregistrer"}
-        </button>
-      </form>
-
-      <div className="space-y-3">
-        {entries.map((entry) => {
-          const cat = categories.find((c) => c.value === entry.category);
-          return (
-            <div
-              key={entry.id}
-              className="bg-surface-container-low rounded-2xl p-4 space-y-2"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-primary">
-                  {cat?.emoji} {cat?.label}
-                </span>
-                <span className="text-xs text-on-surface-variant">
-                  {formatDate(entry.created_at)}
-                </span>
+          {/* Mood picker (quotidien only) */}
+          {category === "quotidien" && (
+            <div>
+              <p className="text-sm font-medium text-on-surface-variant mb-2">Comment tu te sens ?</p>
+              <div className="flex justify-between">
+                {moods.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setMood(mood === m.value ? null : m.value)}
+                    className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-colors ${
+                      mood === m.value
+                        ? "bg-tertiary-container"
+                        : "hover:bg-surface-container"
+                    }`}
+                  >
+                    <span className="text-2xl">{m.emoji}</span>
+                    <span className="text-[10px] font-medium text-on-surface-variant">{m.label}</span>
+                  </button>
+                ))}
               </div>
-              <p className="text-sm leading-relaxed">{entry.content}</p>
             </div>
-          );
-        })}
+          )}
+
+          {/* Text */}
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder={category === "quotidien" ? "Comment s'est passée ta journée ?" : "Qu'est-ce que tu veux noter ?"}
+            rows={3}
+            className="w-full bg-surface border border-outline-variant rounded-xl px-4 py-3 text-sm placeholder:text-outline resize-none focus:outline-none focus:border-primary transition-colors"
+          />
+
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); setContent(""); setMood(null); }}
+              className="flex-1 py-2.5 rounded-full text-sm font-medium text-on-surface-variant bg-surface-container"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={saving || (!content.trim() && !mood)}
+              className="flex-1 bg-primary text-on-primary py-2.5 rounded-full text-sm font-semibold disabled:opacity-50 transition-opacity"
+            >
+              {saving ? "..." : "Enregistrer"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Timeline */}
+      <div className="space-y-5">
+        {Array.from(grouped.entries()).map(([date, items]) => (
+          <div key={date}>
+            <p className="text-xs font-semibold text-on-surface-variant mb-2 capitalize">
+              {formatDate(date)}
+            </p>
+            <div className="space-y-2">
+              {items.map((item, i) => (
+                <div
+                  key={`${item.sortKey}-${i}`}
+                  className={`rounded-2xl px-4 py-3 flex gap-3 items-start ${
+                    item.type === "journal"
+                      ? "bg-white shadow-[0px_10px_30px_rgba(94,139,126,0.08)]"
+                      : item.type === "activity"
+                      ? "bg-surface-container-low"
+                      : "bg-secondary-container/30"
+                  }`}
+                >
+                  <span className="text-lg mt-0.5">{item.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">{item.title}</p>
+                      {item.subtitle && (
+                        <p className="text-[11px] text-on-surface-variant">{item.subtitle}</p>
+                      )}
+                    </div>
+                    {item.content && (
+                      <p className="text-sm text-on-surface-variant mt-1 leading-relaxed">
+                        {item.content.length > 120 ? item.content.slice(0, 120) + "…" : item.content}
+                      </p>
+                    )}
+                    {item.mood && (
+                      <span className="inline-block mt-1 text-xs bg-tertiary-container text-tertiary px-2 py-0.5 rounded-full">
+                        {moods.find(m => m.value === item.mood)?.emoji} {moods.find(m => m.value === item.mood)?.label}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

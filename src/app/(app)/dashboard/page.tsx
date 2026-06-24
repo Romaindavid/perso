@@ -21,10 +21,14 @@ interface JournalEntry { id: string; created_at: string; category: string; conte
 
 const cardioTypes = ["cycling", "running", "rowing", "windsurfing_v2", "swimming", "walking", "hiking"];
 
+function localDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function daysAgo(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().split("T")[0];
+  return localDate(d);
 }
 
 function startOfWeek(weeksBack: number): string {
@@ -32,15 +36,15 @@ function startOfWeek(weeksBack: number): string {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff - weeksBack * 7);
-  return d.toISOString().split("T")[0];
+  return localDate(d);
 }
 
 function weekDays(): string[] {
   const start = startOfWeek(0);
+  const [y, m, dd] = start.split("-").map(Number);
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(start + "T00:00:00");
-    d.setDate(d.getDate() + i);
-    return d.toISOString().split("T")[0];
+    const d = new Date(y, m - 1, dd + i);
+    return localDate(d);
   });
 }
 
@@ -151,7 +155,7 @@ export default function DashboardPage() {
 
   // Routine streak
   const days = weekDays();
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDate(new Date());
   const routineDays = new Set(routineThisWeek.map(a => a.date));
   let streak = 0;
   for (const d of days) {

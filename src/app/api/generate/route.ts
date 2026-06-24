@@ -54,15 +54,15 @@ function buildProfileContext(profile: Record<string, unknown> | null, type: Gene
     const waterPct = profile.water_pct_auto || profile.water_pct;
     if (boneMass) parts.push(`Masse osseuse : ${boneMass} kg`);
     if (waterPct) parts.push(`Masse hydrique : ${waterPct}%`);
-    if (profile.medical_notes) parts.push(`\n## Notes médicales\n${profile.medical_notes}`);
   }
 
   return parts.join("\n");
 }
 
 async function getContext(type: GenerationType, supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const lookbackDays = type === "medical" ? 90 : 14;
   const since = new Date();
-  since.setDate(since.getDate() - 14);
+  since.setDate(since.getDate() - lookbackDays);
   const sinceStr = since.toISOString().split("T")[0];
 
   const parts: string[] = [];

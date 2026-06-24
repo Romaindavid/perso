@@ -15,7 +15,6 @@ interface Profile {
   sport_goals: string;
   sport_equipment: string;
   sport_routine: string;
-  medical_notes: string;
   psy_context: string;
   weight_auto: number | null;
   weight_date: string | null;
@@ -33,7 +32,7 @@ const defaultProfile: Profile = {
   birth_date: "", height_cm: null, gender: "male",
   body_fat_pct: null, skeletal_muscle_kg: null, bone_mass_kg: null, water_pct: null,
   hr_rest: null, hr_max: null,
-  sport_goals: "", sport_equipment: "", sport_routine: "", medical_notes: "", psy_context: "",
+  sport_goals: "", sport_equipment: "", sport_routine: "", psy_context: "",
   weight_auto: null, weight_date: null, hr_rest_auto: null, hrv_auto: null, metrics_date: null,
   body_fat_auto: null, muscle_mass_auto: null, bone_mass_auto: null, water_pct_auto: null, body_date: null,
 };
@@ -255,19 +254,6 @@ export default function ProfilePage() {
             value={profile.sport_routine}
             onChange={(v) => update("sport_routine", v)}
             placeholder="Ex: 10 pompes, 10 roue abdo, 20 curls..."
-          />
-        </Field>
-      </div>
-
-      {/* Médical */}
-      <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
-        <h2 className="text-sm font-medium text-on-surface-variant">Notes médicales</h2>
-        <Field label="Contexte médical">
-          <TextArea
-            value={profile.medical_notes}
-            onChange={(v) => update("medical_notes", v)}
-            rows={4}
-            placeholder="Antécédents, traitements en cours, allergies..."
           />
         </Field>
       </div>

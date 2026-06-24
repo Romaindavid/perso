@@ -81,6 +81,7 @@ export default function JournalPage() {
   const [content, setContent] = useState("");
   const [mood, setMood] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -284,10 +285,14 @@ export default function JournalPage() {
               {items.map((item, i) => {
                 if (item.type === "journal") {
                   const moodInfo = item.mood ? moods.find(m => m.value === item.mood) : null;
+                  const itemId = `${item.sortKey}-${i}`;
+                  const isLong = (item.content?.length || 0) > 150;
+                  const isExpanded = expandedId === itemId;
                   return (
                     <div
-                      key={`${item.sortKey}-${i}`}
-                      className="bg-white rounded-2xl px-5 py-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]"
+                      key={itemId}
+                      className="bg-white rounded-2xl px-5 py-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] cursor-pointer active:scale-[0.99] transition-transform"
+                      onClick={() => isLong ? setExpandedId(isExpanded ? null : itemId) : undefined}
                     >
                       <div className="flex items-start justify-between mb-1">
                         <div className="flex items-center gap-2">
@@ -297,8 +302,8 @@ export default function JournalPage() {
                         <span className="text-xs text-on-surface-variant mt-1">{item.subtitle}</span>
                       </div>
                       {item.content && (
-                        <p className="text-sm text-on-surface-variant leading-relaxed mt-2">
-                          {item.content.length > 150 ? item.content.slice(0, 150) + "…" : item.content}
+                        <p className="text-sm text-on-surface-variant leading-relaxed mt-2 whitespace-pre-line">
+                          {isLong && !isExpanded ? item.content.slice(0, 150) + "…" : item.content}
                         </p>
                       )}
                       {moodInfo && (

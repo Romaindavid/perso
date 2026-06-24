@@ -106,32 +106,26 @@ export default function DashboardPage() {
 
   // --- État de forme ---
   const lastSleep = sleep[sleep.length - 1];
-  const sleepScore = lastSleep ? Math.round((lastSleep.duration_hours / 8) * 100) : null;
-  const sleepSignal = sleepScore ? (sleepScore >= 88 ? "green" : sleepScore >= 75 ? "orange" : "red") : "green";
+  const sleepSignal = lastSleep
+    ? (lastSleep.duration_hours >= 7 ? "green" : lastSleep.duration_hours >= 6 ? "orange" : "red")
+    : "green";
+  const sleepHours = lastSleep ? Math.floor(lastSleep.duration_hours) : null;
+  const sleepMinutes = lastSleep ? Math.round((lastSleep.duration_hours % 1) * 60) : null;
+  const sleepQuality = lastSleep?.quality?.toLowerCase() || null;
 
   const last30 = metrics.slice(-30);
   const todayMetric = metrics[metrics.length - 1];
-  const avgHR = last30.filter(m => m.resting_hr).reduce((s, m) => s + m.resting_hr!, 0) / (last30.filter(m => m.resting_hr).length || 1);
-  const avgHRV = last30.filter(m => m.hrv).reduce((s, m) => s + m.hrv!, 0) / (last30.filter(m => m.hrv).length || 1);
+  const metricsWithHR = last30.filter(m => m.resting_hr);
+  const metricsWithHRV = last30.filter(m => m.hrv);
+  const avgHR = metricsWithHR.reduce((s, m) => s + m.resting_hr!, 0) / (metricsWithHR.length || 1);
+  const avgHRV = metricsWithHRV.reduce((s, m) => s + m.hrv!, 0) / (metricsWithHRV.length || 1);
 
-  let recoveryScore = 50;
-  if (todayMetric?.resting_hr && todayMetric?.hrv && avgHR && avgHRV) {
-    const hrFactor = 1 - ((todayMetric.resting_hr - avgHR) / avgHR);
-    const hrvFactor = todayMetric.hrv / avgHRV;
-    recoveryScore = Math.round(((hrFactor + hrvFactor) / 2) * 100);
-    recoveryScore = Math.max(0, Math.min(100, recoveryScore));
-  }
-  const recoverySignal = recoveryScore >= 80 ? "green" : recoveryScore >= 60 ? "orange" : "red";
-  const recoveryTrend = todayMetric?.hrv && avgHRV ? Math.round(((todayMetric.hrv - avgHRV) / avgHRV) * 100) : 0;
+  const hrDiff = todayMetric?.resting_hr && avgHR ? todayMetric.resting_hr - Math.round(avgHR) : 0;
+  const hrvDiff = todayMetric?.hrv && avgHRV ? todayMetric.hrv - Math.round(avgHRV) : 0;
 
-  // Humeur from recent psy/quotidien journal
-  const recentJournal = journal.filter(j => {
-    const d = new Date(j.created_at);
-    return (Date.now() - d.getTime()) / 86400000 <= 7;
-  });
-  const hasRecentPsy = recentJournal.some(j => j.category === "psy" || j.category === "quotidien");
-  const moodEmoji = hasRecentPsy ? "😊" : "—";
-  const moodLabel = hasRecentPsy ? "Stable" : "Pas de donnée";
+  let recoverySignal: "green" | "orange" | "red" = "green";
+  if (hrDiff > 3 || hrvDiff < -5) recoverySignal = "orange";
+  if (hrDiff > 6 || hrvDiff < -10) recoverySignal = "red";
 
   // --- Activité cette semaine ---
   const thisWeekStart = startOfWeek(0);
@@ -208,11 +202,16 @@ export default function DashboardPage() {
         <div className="grid grid-cols-3 gap-3">
           {/* Sommeil */}
           <div className="bg-white rounded-2xl p-3.5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]">
-            <p className="text-xs font-semibold text-on-surface-variant">Sommeil</p>
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <span className="text-lg font-bold">{sleepScore ?? "—"}%</span>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-on-surface-variant">Sommeil</p>
               <span className={`w-2 h-2 rounded-full ${sleepSignal === "green" ? "bg-primary" : sleepSignal === "orange" ? "bg-tertiary" : "bg-error"}`} />
             </div>
+            <p className="text-lg font-bold mt-1.5">
+              {sleepHours != null ? `${sleepHours}h${sleepMinutes ? String(sleepMinutes).padStart(2, "0") : ""}` : "—"}
+            </p>
+            {sleepQuality && (
+              <p className="text-[11px] text-on-surface-variant mt-0.5 capitalize">{sleepQuality}</p>
+            )}
             <div className="flex gap-0.5 mt-2">
               {sleep.slice(-7).map((s, i) => (
                 <div
@@ -226,15 +225,22 @@ export default function DashboardPage() {
 
           {/* Récup */}
           <div className="bg-white rounded-2xl p-3.5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]">
-            <p className="text-xs font-semibold text-on-surface-variant">Récup</p>
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <span className="text-lg font-bold">{recoveryScore}%</span>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-on-surface-variant">Récup</p>
               <span className={`w-2 h-2 rounded-full ${recoverySignal === "green" ? "bg-primary" : recoverySignal === "orange" ? "bg-tertiary" : "bg-error"}`} />
             </div>
-            <p className="text-[11px] text-on-surface-variant mt-2">
-              <span className={recoveryTrend >= 0 ? "text-primary" : "text-error"}>
-                {recoveryTrend >= 0 ? "↗" : "↘"} {recoveryTrend >= 0 ? "+" : ""}{recoveryTrend}%
-              </span>
+            <div className="mt-1.5 space-y-1">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px] text-on-surface-variant">FC</span>
+                <span className="text-sm font-bold">{todayMetric?.resting_hr ?? "—"}</span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px] text-on-surface-variant">HRV</span>
+                <span className="text-sm font-bold">{todayMetric?.hrv ?? "—"}</span>
+              </div>
+            </div>
+            <p className="text-[10px] text-outline mt-1.5">
+              moy. FC {Math.round(avgHR)} · HRV {Math.round(avgHRV)}
             </p>
           </div>
 

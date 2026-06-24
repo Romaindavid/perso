@@ -172,7 +172,7 @@ export default function DashboardPage() {
     .filter(m => m.weight != null)
     .map(m => ({ value: m.weight! }));
 
-  const dayLabels = ["L", "M", "M", "J", "V", "S", "D"];
+  const dayLabels = ["L", "Ma", "Me", "J", "V", "S", "D"];
 
   if (loading) {
     return (

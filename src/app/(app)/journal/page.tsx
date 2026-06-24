@@ -50,8 +50,8 @@ function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function formatDate(d: string) {
-  return new Date(d + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+function formatDateHeader(d: string) {
+  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 }
 
 function formatTime(iso: string) {
@@ -67,6 +67,7 @@ type TimelineItem = {
   subtitle?: string;
   mood?: string | null;
   content?: string;
+  category?: string;
 };
 
 export default function JournalPage() {
@@ -75,7 +76,6 @@ export default function JournalPage() {
   const [sleepData, setSleepData] = useState<Sleep[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form state
   const [showForm, setShowForm] = useState(false);
   const [category, setCategory] = useState<JournalCategory>("quotidien");
   const [content, setContent] = useState("");
@@ -137,6 +137,7 @@ export default function JournalPage() {
       subtitle: formatTime(j.created_at),
       mood: j.mood,
       content: j.content,
+      category: j.category,
     });
   });
 
@@ -148,7 +149,7 @@ export default function JournalPage() {
       type: "activity",
       icon: activityIcons[a.type] || "🏅",
       title: label.charAt(0).toUpperCase() + label.slice(1),
-      subtitle: `${a.duration_minutes} min${a.intensity ? ` · ${a.intensity}` : ""} · ${a.calories} kcal`,
+      subtitle: `${a.duration_minutes} min · ${a.intensity || "—"} · ${a.calories} kcal`,
     });
   });
 
@@ -167,7 +168,6 @@ export default function JournalPage() {
 
   timeline.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
-  // Group by date
   const grouped = new Map<string, TimelineItem[]>();
   timeline.forEach(item => {
     const existing = grouped.get(item.date) || [];
@@ -184,13 +184,21 @@ export default function JournalPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight">Journal</h1>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center">
+            <svg className="w-5 h-5 text-on-primary-container" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+            </svg>
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">Journal</h1>
+        </div>
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
-            className="bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-semibold"
+            className="bg-primary text-on-primary px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1"
           >
             + Nouvelle entrée
           </button>
@@ -200,14 +208,13 @@ export default function JournalPage() {
       {/* Form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-4">
-          {/* Categories */}
           <div className="flex gap-2 flex-wrap">
             {categories.map((cat) => (
               <button
                 key={cat.value}
                 type="button"
                 onClick={() => setCategory(cat.value)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                   category === cat.value
                     ? "bg-primary text-on-primary"
                     : "bg-surface-container text-on-surface-variant"
@@ -218,10 +225,9 @@ export default function JournalPage() {
             ))}
           </div>
 
-          {/* Mood picker (quotidien only) */}
           {category === "quotidien" && (
             <div>
-              <p className="text-sm font-medium text-on-surface-variant mb-2">Comment tu te sens ?</p>
+              <p className="text-xs font-semibold text-on-surface-variant mb-2">Comment tu te sens ?</p>
               <div className="flex justify-between">
                 {moods.map((m) => (
                   <button
@@ -229,9 +235,7 @@ export default function JournalPage() {
                     type="button"
                     onClick={() => setMood(mood === m.value ? null : m.value)}
                     className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-colors ${
-                      mood === m.value
-                        ? "bg-tertiary-container"
-                        : "hover:bg-surface-container"
+                      mood === m.value ? "bg-tertiary-container" : "hover:bg-surface-container"
                     }`}
                   >
                     <span className="text-2xl">{m.emoji}</span>
@@ -242,7 +246,6 @@ export default function JournalPage() {
             </div>
           )}
 
-          {/* Text */}
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -251,19 +254,18 @@ export default function JournalPage() {
             className="w-full bg-surface border border-outline-variant rounded-xl px-4 py-3 text-sm placeholder:text-outline resize-none focus:outline-none focus:border-primary transition-colors"
           />
 
-          {/* Actions */}
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => { setShowForm(false); setContent(""); setMood(null); }}
-              className="flex-1 py-2.5 rounded-full text-sm font-medium text-on-surface-variant bg-surface-container"
+              className="flex-1 py-2.5 rounded-full text-xs font-semibold text-on-surface-variant bg-surface-container"
             >
               Annuler
             </button>
             <button
               type="submit"
               disabled={saving || (!content.trim() && !mood)}
-              className="flex-1 bg-primary text-on-primary py-2.5 rounded-full text-sm font-semibold disabled:opacity-50 transition-opacity"
+              className="flex-1 bg-primary text-on-primary py-2.5 rounded-full text-xs font-semibold disabled:opacity-50 transition-opacity"
             >
               {saving ? "..." : "Enregistrer"}
             </button>
@@ -272,45 +274,75 @@ export default function JournalPage() {
       )}
 
       {/* Timeline */}
-      <div className="space-y-5">
+      <div className="space-y-6">
         {Array.from(grouped.entries()).map(([date, items]) => (
           <div key={date}>
-            <p className="text-xs font-semibold text-on-surface-variant mb-2 capitalize">
-              {formatDate(date)}
+            <p className="text-xs font-semibold text-on-surface-variant mb-2.5 capitalize">
+              {formatDateHeader(date)}
             </p>
-            <div className="space-y-2">
-              {items.map((item, i) => (
-                <div
-                  key={`${item.sortKey}-${i}`}
-                  className={`rounded-2xl px-4 py-3 flex gap-3 items-start ${
-                    item.type === "journal"
-                      ? "bg-white shadow-[0px_10px_30px_rgba(94,139,126,0.08)]"
-                      : item.type === "activity"
-                      ? "bg-surface-container-low"
-                      : "bg-secondary-container/30"
-                  }`}
-                >
-                  <span className="text-lg mt-0.5">{item.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold">{item.title}</p>
-                      {item.subtitle && (
-                        <p className="text-[11px] text-on-surface-variant">{item.subtitle}</p>
+            <div className="space-y-2.5">
+              {items.map((item, i) => {
+                if (item.type === "journal") {
+                  const moodInfo = item.mood ? moods.find(m => m.value === item.mood) : null;
+                  return (
+                    <div
+                      key={`${item.sortKey}-${i}`}
+                      className="bg-white rounded-2xl px-5 py-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]"
+                    >
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{item.icon}</span>
+                          <span className="text-base font-bold">{item.title}</span>
+                        </div>
+                        <span className="text-xs text-on-surface-variant mt-1">{item.subtitle}</span>
+                      </div>
+                      {item.content && (
+                        <p className="text-sm text-on-surface-variant leading-relaxed mt-2">
+                          {item.content.length > 150 ? item.content.slice(0, 150) + "…" : item.content}
+                        </p>
+                      )}
+                      {moodInfo && (
+                        <span className="inline-flex items-center gap-1 mt-3 text-xs font-semibold bg-tertiary-container text-on-tertiary-container px-3 py-1 rounded-full">
+                          {moodInfo.emoji} {moodInfo.label}
+                        </span>
                       )}
                     </div>
-                    {item.content && (
-                      <p className="text-sm text-on-surface-variant mt-1 leading-relaxed">
-                        {item.content.length > 120 ? item.content.slice(0, 120) + "…" : item.content}
-                      </p>
-                    )}
-                    {item.mood && (
-                      <span className="inline-block mt-1 text-xs bg-tertiary-container text-tertiary px-2 py-0.5 rounded-full">
-                        {moods.find(m => m.value === item.mood)?.emoji} {moods.find(m => m.value === item.mood)?.label}
-                      </span>
+                  );
+                }
+
+                if (item.type === "activity") {
+                  return (
+                    <div
+                      key={`${item.sortKey}-${i}`}
+                      className="bg-secondary-container/40 rounded-2xl px-4 py-3 flex items-center gap-3"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-lg">
+                        {item.icon}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold">{item.title}</p>
+                        <p className="text-xs text-on-surface-variant">{item.subtitle}</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Sleep
+                return (
+                  <div
+                    key={`${item.sortKey}-${i}`}
+                    className="bg-surface-container-low rounded-2xl px-4 py-3 flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="text-sm font-medium">{item.title}</span>
+                    </div>
+                    {item.subtitle && (
+                      <span className="text-xs font-medium text-on-surface-variant">{item.subtitle}</span>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

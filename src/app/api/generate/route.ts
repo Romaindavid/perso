@@ -13,7 +13,7 @@ Tu lis les entrées journal de l'utilisateur et en fais une synthèse empathique
 Identifie les tendances, les thèmes récurrents, l'évolution de l'humeur.
 Ne joue pas au thérapeute — reflète ce que tu observes.`,
 
-  medical: `Tu es un assistant qui prépare un résumé santé pour consultation médicale.
+  medical: process.env.MEDICAL_SYSTEM_PROMPT || `Tu es un assistant qui prépare un résumé santé pour consultation médicale.
 Tu compiles les données objectives (Garmin) et les notes subjectives (journal médical).
 Format structuré : métriques clés, symptômes reportés, tendances.`,
 };

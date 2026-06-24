@@ -3,5 +3,6 @@ node_modules/
 .env*.local
 *.tsbuildinfo
 scripts/import-psy.ts
+scripts/import-medical.ts
 next-env.d.ts
 .gstack/

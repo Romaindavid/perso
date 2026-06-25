@@ -236,14 +236,16 @@ export default function ProjectsPage() {
         <h2 className="text-sm font-semibold text-on-surface-variant mb-3">Tâches</h2>
 
         {/* Add task — compact */}
-        <div className="bg-white rounded-2xl p-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] mb-3">
+        <form
+          onSubmit={(e) => { e.preventDefault(); addTask(); }}
+          className="bg-white rounded-2xl p-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] mb-3"
+        >
           <div className="flex gap-2 items-center">
             <span className="text-on-surface-variant text-sm">⊕</span>
             <input
               type="text"
               value={newTaskContent}
               onChange={(e) => setNewTaskContent(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addTask()}
               placeholder="Ajouter une tâche..."
               className="flex-1 bg-transparent text-sm placeholder:text-outline focus:outline-none"
             />
@@ -252,7 +254,8 @@ export default function ProjectsPage() {
             {TAGS.map(tag => (
               <button
                 key={tag}
-                onClick={() => { setNewTaskTag(tag); if (newTaskContent.trim()) addTask(); }}
+                type={newTaskContent.trim() ? "submit" : "button"}
+                onClick={() => setNewTaskTag(tag)}
                 className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
                   newTaskTag === tag ? tagColors[tag] || "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant"
                 }`}
@@ -261,7 +264,7 @@ export default function ProjectsPage() {
               </button>
             ))}
           </div>
-        </div>
+        </form>
 
         {/* Filter */}
         <div className="flex gap-1.5 flex-wrap mb-3">

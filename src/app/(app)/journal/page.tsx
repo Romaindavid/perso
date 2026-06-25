@@ -27,6 +27,14 @@ interface Sleep {
   quality: string | null;
 }
 
+interface CompletedTodo {
+  id: string;
+  content: string;
+  completed_at: string;
+  project_name?: string;
+  tag?: string;
+}
+
 const categories: { value: JournalCategory; label: string; emoji: string }[] = [
   { value: "quotidien", label: "Quotidien", emoji: "📝" },
   { value: "sport", label: "Sport", emoji: "🏃" },
@@ -75,6 +83,7 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sleepData, setSleepData] = useState<Sleep[]>([]);
+  const [completedTodos, setCompletedTodos] = useState<CompletedTodo[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
@@ -90,14 +99,25 @@ export default function JournalPage() {
 
   async function loadAll() {
     setLoading(true);
-    const [{ data: j }, { data: a }, { data: s }] = await Promise.all([
+    const [{ data: j }, { data: a }, { data: s }, { data: pt }, { data: tk }] = await Promise.all([
       supabase.from("journal_entries").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("garmin_activities").select("*").order("date", { ascending: false }).limit(100),
       supabase.from("garmin_sleep").select("*").order("date", { ascending: false }).limit(60),
+      supabase.from("project_todos").select("*, projects(name)").eq("done", true).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(50),
+      supabase.from("tasks").select("*").eq("done", true).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(50),
     ]);
     setEntries(j || []);
     setActivities(a || []);
     setSleepData(s || []);
+
+    const todos: CompletedTodo[] = [];
+    pt?.forEach((t: any) => {
+      todos.push({ id: t.id, content: t.content, completed_at: t.completed_at, project_name: t.projects?.name });
+    });
+    tk?.forEach((t: any) => {
+      if (t.completed_at) todos.push({ id: t.id, content: t.content, completed_at: t.completed_at, tag: t.tag });
+    });
+    setCompletedTodos(todos);
     setLoading(false);
   }
 
@@ -165,6 +185,18 @@ export default function JournalPage() {
       icon: "😴",
       title: `${h}h${m ? String(m).padStart(2, "0") : ""} de sommeil`,
       subtitle: s.quality?.toLowerCase() || undefined,
+    });
+  });
+
+  completedTodos.forEach(t => {
+    const label = t.project_name || t.tag || "Tâche";
+    timeline.push({
+      date: t.completed_at.split("T")[0],
+      sortKey: t.completed_at,
+      type: "activity",
+      icon: "✅",
+      title: t.content,
+      subtitle: label,
     });
   });
 

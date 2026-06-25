@@ -81,8 +81,11 @@ export default function ProjectsPage() {
   }
 
   async function toggleTodo(id: string, done: boolean) {
-    await supabase.from("project_todos").update({ done: !done }).eq("id", id);
-    setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !done } : t));
+    const update = done
+      ? { done: false, completed_at: null }
+      : { done: true, completed_at: new Date().toISOString() };
+    await supabase.from("project_todos").update(update).eq("id", id);
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   }
 
   async function deleteTodo(id: string) {
@@ -99,8 +102,11 @@ export default function ProjectsPage() {
   }
 
   async function toggleTask(id: string, done: boolean) {
-    await supabase.from("tasks").update({ done: !done }).eq("id", id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !done } : t));
+    const update = done
+      ? { done: false, completed_at: null }
+      : { done: true, completed_at: new Date().toISOString() };
+    await supabase.from("tasks").update(update).eq("id", id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   }
 
   const filteredTasks = filterTag ? tasks.filter(t => t.tag === filterTag) : tasks;

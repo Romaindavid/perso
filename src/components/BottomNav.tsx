@@ -13,22 +13,22 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-surface/80 backdrop-blur-xl border-t border-outline-variant/30">
-      <div className="flex justify-around items-center h-16 max-w-lg mx-auto">
+    <nav className="fixed bottom-0 left-0 right-0 bg-surface/80 backdrop-blur-xl border-t border-outline-variant/30 pb-[env(safe-area-inset-bottom)]">
+      <div className="flex justify-around items-center h-20 max-w-lg mx-auto">
         {tabs.map((tab) => {
           const active = pathname.startsWith(tab.href);
           return (
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 transition-colors ${
+              className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-colors min-w-[72px] ${
                 active ? "text-primary" : "text-on-surface-variant"
               }`}
             >
-              <svg className="w-6 h-6" fill={active ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active ? 0 : 1.5}>
+              <svg className="w-7 h-7" fill={active ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active ? 0 : 1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
               </svg>
-              <span className={`text-[11px] ${active ? "font-semibold" : "font-medium"}`}>{tab.label}</span>
+              <span className={`text-xs ${active ? "font-semibold" : "font-medium"}`}>{tab.label}</span>
             </Link>
           );
         })}

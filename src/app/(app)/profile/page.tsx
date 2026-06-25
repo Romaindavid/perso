@@ -48,15 +48,12 @@ function AutoBadge({ date }: { date: string | null }) {
   );
 }
 
-function AutoCard({ label, value, unit, date }: { label: string; value: number | null; unit: string; date: string | null }) {
+function AutoCard({ label, value, unit }: { label: string; value: number | null; unit: string; date: string | null }) {
   return (
     <div className="rounded-xl bg-primary/10 px-3 py-2.5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-on-surface-variant">{label}</span>
-        <AutoBadge date={date} />
-      </div>
-      <p className="text-xl font-semibold text-primary mt-1">
-        {value ?? "—"} <span className="text-sm font-normal">{unit}</span>
+      <span className="text-xs text-on-surface-variant">{label}</span>
+      <p className="text-lg font-bold text-primary mt-0.5">
+        {value ?? "—"} <span className="text-xs font-normal">{unit}</span>
       </p>
     </div>
   );
@@ -153,84 +150,75 @@ export default function ProfilePage() {
           <h2 className="text-sm font-medium text-on-surface-variant">Données Garmin</h2>
           <AutoBadge date={profile.metrics_date} />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           <AutoCard label="Poids" value={profile.weight_auto} unit="kg" date={profile.weight_date} />
           <AutoCard label="FC repos" value={profile.hr_rest_auto} unit="bpm" date={profile.metrics_date} />
           <AutoCard label="HRV" value={profile.hrv_auto} unit="ms" date={profile.metrics_date} />
         </div>
-        {(profile.body_fat_auto || profile.muscle_mass_auto || profile.bone_mass_auto || profile.water_pct_auto) && (
-          <div className="grid grid-cols-2 gap-3 mt-2">
+        {(profile.body_fat_auto || profile.muscle_mass_auto || profile.bone_mass_auto || profile.water_pct_auto) ? (
+          <div className="grid grid-cols-2 gap-2">
             <AutoCard label="Masse grasse" value={profile.body_fat_auto} unit="%" date={profile.body_date} />
             <AutoCard label="Masse musc." value={profile.muscle_mass_auto} unit="kg" date={profile.body_date} />
             <AutoCard label="Masse osseuse" value={profile.bone_mass_auto} unit="kg" date={profile.body_date} />
             <AutoCard label="Hydratation" value={profile.water_pct_auto} unit="%" date={profile.body_date} />
           </div>
+        ) : (
+          <p className="text-xs text-outline">Composition corporelle : sync ta balance Garmin</p>
         )}
       </div>
 
       {/* Identité */}
-      <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
+      <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
         <h2 className="text-sm font-medium text-on-surface-variant">Identité</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Date de naissance" hint={age ? `${age} ans` : undefined}>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Naissance" hint={age ? `${age} ans` : undefined}>
             <input
               type="date"
               value={profile.birth_date || ""}
               onChange={(e) => update("birth_date", e.target.value)}
-              className="w-full mt-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-base focus:outline-none focus:border-primary"
+              className="w-full mt-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
             />
           </Field>
           <Field label="Taille">
             <NumberInput value={profile.height_cm} onChange={(v) => update("height_cm", v)} unit="cm" />
           </Field>
+          <Field label="Genre">
+            <select
+              value={profile.gender}
+              onChange={(e) => update("gender", e.target.value)}
+              className="w-full mt-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="male">Homme</option>
+              <option value="female">Femme</option>
+            </select>
+          </Field>
+          <Field label="FC max">
+            <NumberInput value={profile.hr_max} onChange={(v) => update("hr_max", v)} unit="bpm" />
+          </Field>
         </div>
-        <Field label="Genre">
-          <select
-            value={profile.gender}
-            onChange={(e) => update("gender", e.target.value)}
-            className="w-full mt-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-base focus:outline-none focus:border-primary"
-          >
-            <option value="male">Homme</option>
-            <option value="female">Femme</option>
-          </select>
-        </Field>
       </div>
 
       {/* Composition corporelle (manuel — fallback si pas de données Garmin) */}
       {!profile.body_fat_auto && (
-        <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
+        <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
           <h2 className="text-sm font-medium text-on-surface-variant">Composition corporelle</h2>
-          <p className="text-xs text-outline">Pas encore de données balance Garmin — saisie manuelle</p>
-          <div className="grid grid-cols-2 gap-4">
+          <p className="text-xs text-outline">Saisie manuelle — en attente sync balance Garmin</p>
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Masse grasse">
               <NumberInput value={profile.body_fat_pct} onChange={(v) => update("body_fat_pct", v)} unit="%" />
             </Field>
-            <Field label="Masse musc. squelettique">
+            <Field label="Masse musc.">
               <NumberInput value={profile.skeletal_muscle_kg} onChange={(v) => update("skeletal_muscle_kg", v)} unit="kg" />
             </Field>
             <Field label="Masse osseuse">
               <NumberInput value={profile.bone_mass_kg} onChange={(v) => update("bone_mass_kg", v)} unit="kg" />
             </Field>
-            <Field label="Masse hydrique">
+            <Field label="Hydratation">
               <NumberInput value={profile.water_pct} onChange={(v) => update("water_pct", v)} unit="%" />
             </Field>
           </div>
         </div>
       )}
-
-      {/* Cardio (manuel) */}
-      <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
-        <h2 className="text-sm font-medium text-on-surface-variant">Cardio (valeurs de référence)</h2>
-        <p className="text-xs text-outline">FC repos auto dans le bloc Garmin — ici pour la FC max et valeurs test d'effort</p>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="FC max">
-            <NumberInput value={profile.hr_max} onChange={(v) => update("hr_max", v)} unit="bpm" />
-          </Field>
-          <Field label="FC repos (manuel)">
-            <NumberInput value={profile.hr_rest} onChange={(v) => update("hr_rest", v)} unit="bpm" />
-          </Field>
-        </div>
-      </div>
 
       {/* Sport */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">

@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       if (hr?.restingHeartRate) m.resting_hr = hr.restingHeartRate;
     } catch { /* skip */ }
     try {
-      const hrvData = await GCClient.get<any>(`https://connect.garmin.com/modern/proxy/hrv-service/hrv/${day}`);
+      const hrvData = await GCClient.get<any>(`https://connectapi.garmin.com/hrv-service/hrv/${day}`);
       if (hrvData?.hrvSummary?.weeklyAvg) m.hrv = Math.round(hrvData.hrvSummary.weeklyAvg);
       else if (hrvData?.hrvSummary?.lastNightAvg) m.hrv = Math.round(hrvData.hrvSummary.lastNightAvg);
     } catch { /* skip */ }

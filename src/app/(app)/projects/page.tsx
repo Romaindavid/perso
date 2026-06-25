@@ -43,6 +43,12 @@ export default function ProjectsPage() {
   // New todo per project
   const [newTodo, setNewTodo] = useState<Record<string, string>>({});
 
+  // Project date update
+  async function updateProjectDate(id: string, field: "last_edition" | "next_edition", value: string) {
+    await supabase.from("projects").update({ [field]: value || null }).eq("id", id);
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value || null } : p));
+  }
+
   // New task
   const [newTaskContent, setNewTaskContent] = useState("");
   const [newTaskTag, setNewTaskTag] = useState(TAGS[0]);
@@ -148,9 +154,25 @@ export default function ProjectsPage() {
                   )}
                 </div>
 
-                <div className="flex gap-4 text-xs text-on-surface-variant mb-3">
-                  <span>🕐 Dernière : {formatDate(project.last_edition)}</span>
-                  <span className="text-primary font-medium">📅 Prochaine : {formatDate(project.next_edition)}</span>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <label className="flex items-center gap-1.5 text-xs text-on-surface-variant cursor-pointer">
+                    <span>🕐</span>
+                    <input
+                      type="date"
+                      value={project.last_edition || ""}
+                      onChange={(e) => updateProjectDate(project.id, "last_edition", e.target.value)}
+                      className="bg-transparent text-xs font-medium w-full focus:outline-none cursor-pointer"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-primary font-medium cursor-pointer">
+                    <span>📅</span>
+                    <input
+                      type="date"
+                      value={project.next_edition || ""}
+                      onChange={(e) => updateProjectDate(project.id, "next_edition", e.target.value)}
+                      className="bg-transparent text-xs font-medium text-primary w-full focus:outline-none cursor-pointer"
+                    />
+                  </label>
                 </div>
 
                 {projectTodos.length > 0 && (

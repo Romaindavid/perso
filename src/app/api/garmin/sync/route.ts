@@ -84,6 +84,11 @@ export async function POST(request: Request) {
       if (hr?.restingHeartRate) m.resting_hr = hr.restingHeartRate;
     } catch { /* skip */ }
     try {
+      const hrvData = await GCClient.get<any>(`https://connect.garmin.com/modern/proxy/hrv-service/hrv/${day}`);
+      if (hrvData?.hrvSummary?.weeklyAvg) m.hrv = Math.round(hrvData.hrvSummary.weeklyAvg);
+      else if (hrvData?.hrvSummary?.lastNightAvg) m.hrv = Math.round(hrvData.hrvSummary.lastNightAvg);
+    } catch { /* skip */ }
+    try {
       const w = await GCClient.getDailyWeightData(new Date(day));
       if (w?.totalAverage?.weight) m.weight = Math.round(w.totalAverage.weight / 1000 * 10) / 10;
       if (w?.totalAverage?.bodyFat) m.body_fat_pct = Math.round(w.totalAverage.bodyFat * 10) / 10;

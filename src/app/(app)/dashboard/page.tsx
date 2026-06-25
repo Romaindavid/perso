@@ -158,15 +158,16 @@ export default function DashboardPage() {
   const muscuThis = allThisWeek.filter(isMuscu).length;
   const cardioThis = allThisWeek.filter(a => cardioTypes.includes(a.type)).length;
 
-  // Routine streak
+  // Routine streak — count consecutive days backward from today (or yesterday if today not done yet)
   const days = weekDays();
   const today = localDate(new Date());
   const routineDays = new Set(routineThisWeek.map(a => a.date));
   let streak = 0;
-  for (const d of days) {
-    if (d > today) break;
-    if (routineDays.has(d)) streak++;
-    else streak = 0;
+  const pastDays = days.filter(d => d <= today).reverse();
+  const startFrom = routineDays.has(today) ? 0 : 1;
+  for (let idx = startFrom; idx < pastDays.length; idx++) {
+    if (routineDays.has(pastDays[idx])) streak++;
+    else break;
   }
 
   // --- Poids ---

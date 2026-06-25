@@ -220,7 +220,6 @@ export default function ProjectsPage() {
               </div>
             );
           })}
-        </div>
       </div>
 
       {/* Tâches */}

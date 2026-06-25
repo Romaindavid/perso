@@ -141,9 +141,15 @@ export default function DashboardPage() {
   const hrDiff = todayMetric?.resting_hr && avgHR ? todayMetric.resting_hr - Math.round(avgHR) : 0;
   const hrvDiff = todayMetric?.hrv && avgHRV ? todayMetric.hrv - Math.round(avgHRV) : 0;
 
+  // FC: lower is better → negative diff is good
+  const hrGood = hrDiff <= 0;
+  // HRV: higher is better → positive diff is good
+  const hrvGood = hrvDiff >= 0;
+
   let recoverySignal: "green" | "orange" | "red" = "green";
-  if (hrDiff > 3 || hrvDiff < -5) recoverySignal = "orange";
-  if (hrDiff > 6 || hrvDiff < -10) recoverySignal = "red";
+  let recoveryLabel = "Bonne forme";
+  if (hrDiff > 3 || hrvDiff < -5) { recoverySignal = "orange"; recoveryLabel = "Fatigue légère"; }
+  if (hrDiff > 6 || hrvDiff < -10) { recoverySignal = "red"; recoveryLabel = "Récupère"; }
 
   // --- Activité cette semaine ---
   const thisWeekStart = startOfWeek(0);
@@ -244,19 +250,29 @@ export default function DashboardPage() {
               <p className="text-xs font-semibold text-on-surface-variant">Récup</p>
               <span className={`w-2 h-2 rounded-full ${recoverySignal === "green" ? "bg-primary" : recoverySignal === "orange" ? "bg-tertiary" : "bg-error"}`} />
             </div>
-            <div className="mt-1.5 space-y-1">
-              <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-on-surface-variant">FC</span>
-                <span className="text-sm font-bold">{todayMetric?.resting_hr ?? "—"}</span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-on-surface-variant">HRV</span>
-                <span className="text-sm font-bold">{todayMetric?.hrv ?? "—"}</span>
-              </div>
-            </div>
-            <p className="text-[10px] text-outline mt-1.5">
-              moy. FC {Math.round(avgHR)} · HRV {Math.round(avgHRV)}
+            <p className={`text-sm font-bold mt-1.5 ${recoverySignal === "green" ? "text-primary" : recoverySignal === "orange" ? "text-tertiary" : "text-error"}`}>
+              {recoveryLabel}
             </p>
+            <div className="flex gap-2 mt-2 text-[11px]">
+              <span className="flex items-center gap-0.5">
+                <span className="text-on-surface-variant">FC</span>
+                <span className="font-bold">{todayMetric?.resting_hr ?? "—"}</span>
+                {hrDiff !== 0 && (
+                  <span className={hrGood ? "text-primary" : "text-error"}>
+                    {hrDiff > 0 ? "↑" : "↓"}{Math.abs(hrDiff)}
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-0.5">
+                <span className="text-on-surface-variant">HRV</span>
+                <span className="font-bold">{todayMetric?.hrv ?? "—"}</span>
+                {hrvDiff !== 0 && (
+                  <span className={hrvGood ? "text-primary" : "text-error"}>
+                    {hrvDiff > 0 ? "↑" : "↓"}{Math.abs(hrvDiff)}
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
 
           {/* Humeur */}

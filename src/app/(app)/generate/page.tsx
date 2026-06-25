@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { GenerationType } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import Avatar from "@/components/Avatar";
 
 const types: { value: GenerationType; label: string; emoji: string; description: string }[] = [
   { value: "sport", label: "Séance sport", emoji: "🏋️", description: "Programme adapté à ton état actuel" },
@@ -141,7 +142,10 @@ export default function GeneratePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold tracking-tight">Assistant</h1>
+      <div className="flex items-center gap-3">
+        <Avatar />
+        <h1 className="text-xl font-bold tracking-tight">Assistant</h1>
+      </div>
 
       {/* Type selection */}
       <div className="space-y-3">

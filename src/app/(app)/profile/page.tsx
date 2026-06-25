@@ -62,7 +62,7 @@ function AutoCard({ label, value, unit }: { label: string; value: number | null;
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div>
-      <label className="text-sm font-medium text-on-surface-variant">{label}</label>
+      <label className="text-xs font-semibold text-on-surface-variant">{label}</label>
       {children}
       {hint && <p className="text-xs text-outline mt-0.5">{hint}</p>}
     </div>
@@ -71,15 +71,16 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 function NumberInput({ value, onChange, unit }: { value: number | null; onChange: (v: number | null) => void; unit?: string }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="relative mt-1">
       <input
         type="number"
         step="any"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value ? parseFloat(e.target.value) : null)}
-        className="flex-1 mt-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-base focus:outline-none focus:border-primary"
+        placeholder={unit || ""}
+        className="w-full bg-surface border border-outline-variant rounded-xl px-3 py-2 pr-10 text-sm focus:outline-none focus:border-primary"
       />
-      {unit && <span className="text-sm text-on-surface-variant mt-1">{unit}</span>}
+      {unit && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-outline pointer-events-none">{unit}</span>}
     </div>
   );
 }
@@ -147,7 +148,7 @@ export default function ProfilePage() {
       {/* Données auto Garmin */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-on-surface-variant">Données Garmin</h2>
+          <h2 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Données Garmin</h2>
           <AutoBadge date={profile.metrics_date} />
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -169,7 +170,7 @@ export default function ProfilePage() {
 
       {/* Identité */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
-        <h2 className="text-sm font-medium text-on-surface-variant">Identité</h2>
+        <h2 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Identité</h2>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Naissance" hint={age ? `${age} ans` : undefined}>
             <input
@@ -201,7 +202,7 @@ export default function ProfilePage() {
       {/* Composition corporelle (manuel — fallback si pas de données Garmin) */}
       {!profile.body_fat_auto && (
         <div className="bg-surface-container-low rounded-3xl p-4 space-y-3">
-          <h2 className="text-sm font-medium text-on-surface-variant">Composition corporelle</h2>
+          <h2 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Composition corporelle</h2>
           <p className="text-xs text-outline">Saisie manuelle — en attente sync balance Garmin</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Masse grasse">
@@ -222,7 +223,7 @@ export default function ProfilePage() {
 
       {/* Sport */}
       <div className="bg-surface-container-low rounded-3xl p-4 space-y-4">
-        <h2 className="text-sm font-medium text-on-surface-variant">Sport</h2>
+        <h2 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Sport</h2>
         <Field label="Objectifs">
           <TextArea
             value={profile.sport_goals}

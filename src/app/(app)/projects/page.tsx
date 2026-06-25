@@ -27,7 +27,7 @@ interface Task {
   done: boolean;
 }
 
-const TAGS = ["Snooze SAS", "Admin & finance", "Arpentons", "La Grange"];
+const TAGS = ["Snooze SAS", "Admin & finance", "Arpentons", "La Grange", "Autres"];
 
 function formatDate(d: string | null) {
   if (!d) return "—";
@@ -110,6 +110,7 @@ export default function ProjectsPage() {
     "Admin & finance": "bg-tertiary-container text-on-tertiary-container",
     "Arpentons": "bg-secondary-container text-on-secondary-container",
     "La Grange": "bg-surface-container-highest text-on-surface",
+    "Autres": "bg-outline-variant text-on-surface",
   };
 
   if (loading) {
@@ -234,24 +235,25 @@ export default function ProjectsPage() {
       <div>
         <h2 className="text-sm font-semibold text-on-surface-variant mb-3">Tâches</h2>
 
-        {/* Add task */}
-        <div className="bg-white rounded-2xl p-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] mb-3 space-y-3">
-          <div className="flex gap-2">
+        {/* Add task — compact */}
+        <div className="bg-white rounded-2xl p-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] mb-3">
+          <div className="flex gap-2 items-center">
+            <span className="text-on-surface-variant text-sm">⊕</span>
             <input
               type="text"
               value={newTaskContent}
               onChange={(e) => setNewTaskContent(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTask()}
               placeholder="Ajouter une tâche..."
-              className="flex-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm placeholder:text-outline focus:outline-none focus:border-primary"
+              className="flex-1 bg-transparent text-sm placeholder:text-outline focus:outline-none"
             />
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap mt-2">
             {TAGS.map(tag => (
               <button
                 key={tag}
-                onClick={() => setNewTaskTag(tag)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                onClick={() => { setNewTaskTag(tag); if (newTaskContent.trim()) addTask(); }}
+                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
                   newTaskTag === tag ? tagColors[tag] || "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant"
                 }`}
               >
@@ -259,20 +261,13 @@ export default function ProjectsPage() {
               </button>
             ))}
           </div>
-          <button
-            onClick={addTask}
-            disabled={!newTaskContent.trim()}
-            className="w-full bg-primary text-on-primary py-2 rounded-full text-xs font-semibold disabled:opacity-50"
-          >
-            Ajouter
-          </button>
         </div>
 
         {/* Filter */}
-        <div className="flex gap-2 flex-wrap mb-3">
+        <div className="flex gap-1.5 flex-wrap mb-3">
           <button
             onClick={() => setFilterTag(null)}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
               !filterTag ? "bg-on-surface text-surface" : "bg-surface-container text-on-surface-variant"
             }`}
           >
@@ -282,7 +277,7 @@ export default function ProjectsPage() {
             <button
               key={tag}
               onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
                 filterTag === tag ? tagColors[tag] || "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant"
               }`}
             >

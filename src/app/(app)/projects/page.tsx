@@ -27,7 +27,7 @@ interface Task {
   done: boolean;
 }
 
-const TAGS = ["Snooze SAS", "Admin & finance", "Arpentons", "La Grange", "Autres"];
+const TAGS = ["Snooze SAS", "Admin & finance", "Arpentons", "La Grange", "LinkedIn", "Autres"];
 
 function formatDate(d: string | null) {
   if (!d) return "—";
@@ -110,6 +110,7 @@ export default function ProjectsPage() {
     "Admin & finance": "bg-tertiary-container text-on-tertiary-container",
     "Arpentons": "bg-secondary-container text-on-secondary-container",
     "La Grange": "bg-surface-container-highest text-on-surface",
+    "LinkedIn": "bg-[#0a66c2]/10 text-[#0a66c2]",
     "Autres": "bg-outline-variant text-on-surface",
   };
 
@@ -131,47 +132,38 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {/* Projets cadencés */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="text-sm font-semibold text-on-surface-variant">Projets cadencés</h2>
-          <span className="text-xs font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-            {projects.length} actifs
-          </span>
-        </div>
-
-        <div className="space-y-3">
+      {/* Projets */}
+      <div className="space-y-4">
           {projects.map(project => {
             const projectTodos = todos.filter(t => t.project_id === project.id);
             return (
               <div key={project.id} className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg">{project.icon}</span>
-                  <span className="text-base font-bold">{project.name}</span>
-                  {project.cadence && (
-                    <span className="text-[10px] font-semibold bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full ml-auto">
-                      {project.cadence}
-                    </span>
-                  )}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-lg">
+                    {project.icon}
+                  </div>
+                  <span className="text-lg font-bold">{project.name}</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <label className="flex items-center gap-1.5 text-xs text-on-surface-variant cursor-pointer">
+                <div className="space-y-1 mb-4">
+                  <label className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
                     <span>🕐</span>
+                    <span>Dernière édition :</span>
                     <input
                       type="date"
                       value={project.last_edition || ""}
                       onChange={(e) => updateProjectDate(project.id, "last_edition", e.target.value)}
-                      className="bg-transparent text-xs font-medium w-full focus:outline-none cursor-pointer"
+                      className="bg-transparent text-xs font-medium focus:outline-none cursor-pointer"
                     />
                   </label>
-                  <label className="flex items-center gap-1.5 text-xs text-primary font-medium cursor-pointer">
+                  <label className="flex items-center gap-2 text-xs text-primary font-semibold cursor-pointer">
                     <span>📅</span>
+                    <span>Prochaine édition :</span>
                     <input
                       type="date"
                       value={project.next_edition || ""}
                       onChange={(e) => updateProjectDate(project.id, "next_edition", e.target.value)}
-                      className="bg-transparent text-xs font-medium text-primary w-full focus:outline-none cursor-pointer"
+                      className="bg-transparent text-xs font-semibold text-primary focus:outline-none cursor-pointer"
                     />
                   </label>
                 </div>

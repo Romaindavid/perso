@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 interface Profile {
   birth_date: string;
@@ -102,6 +105,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     fetch("/api/profile")
@@ -254,6 +258,25 @@ export default function ProfilePage() {
         className="w-full bg-primary text-on-primary py-3 rounded-full font-medium text-base disabled:opacity-50 transition-opacity"
       >
         {saving ? "Enregistrement..." : saved ? "Enregistré !" : "Enregistrer"}
+      </button>
+
+      {/* Liens */}
+      <Link
+        href="/suggestions"
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-medium text-base border border-primary text-primary"
+      >
+        🔍 Revue du soir
+      </Link>
+
+      <button
+        onClick={async () => {
+          const supabase = createClient();
+          await supabase.auth.signOut();
+          router.push("/login");
+        }}
+        className="w-full py-3 rounded-full font-medium text-base text-error border border-error/30"
+      >
+        Se déconnecter
       </button>
     </div>
   );

@@ -25,6 +25,8 @@ const tagColors: Record<string, string> = {
 export default function SuggestionsPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => { load(); }, []);
@@ -39,6 +41,30 @@ export default function SuggestionsPage() {
       .limit(20);
     setSuggestions(data || []);
     setLoading(false);
+  }
+
+  async function runReview() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/daily-review", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setSyncResult(data.error || "Erreur");
+        return;
+      }
+      const count = data.suggestions?.length || 0;
+      setSyncResult(
+        count > 0
+          ? `${count} suggestion${count > 1 ? "s" : ""} trouvée${count > 1 ? "s" : ""} (${data.events_count} événements, ${data.emails_count} emails analysés)`
+          : `Rien à signaler (${data.events_count} événements, ${data.emails_count} emails analysés)`
+      );
+      await load();
+    } catch {
+      setSyncResult("Erreur réseau");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function accept(s: Suggestion) {
@@ -65,15 +91,38 @@ export default function SuggestionsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <Avatar />
-        <h1 className="text-xl font-bold tracking-tight">Suggestions</h1>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Avatar />
+          <h1 className="text-xl font-bold tracking-tight">Suggestions</h1>
+        </div>
+        <button
+          onClick={runReview}
+          disabled={syncing}
+          className="bg-primary text-on-primary px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+        >
+          {syncing ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
+              Analyse...
+            </>
+          ) : (
+            "🔍 Revue du soir"
+          )}
+        </button>
       </div>
 
-      {suggestions.length === 0 ? (
+      {syncResult && (
+        <div className="bg-surface-container rounded-2xl px-4 py-3 text-xs text-on-surface-variant">
+          {syncResult}
+        </div>
+      )}
+
+      {suggestions.length === 0 && !syncResult ? (
         <div className="text-center py-12">
           <p className="text-4xl mb-3">✨</p>
-          <p className="text-sm text-on-surface-variant">Aucune suggestion en attente</p>
+          <p className="text-sm text-on-surface-variant mb-1">Aucune suggestion en attente</p>
+          <p className="text-xs text-outline">Lance la revue du soir pour analyser ton agenda et tes emails</p>
         </div>
       ) : (
         <div className="space-y-3">

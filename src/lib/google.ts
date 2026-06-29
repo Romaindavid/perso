@@ -41,7 +41,7 @@ export async function getGoogleAccessToken(userId: string): Promise<string | nul
   return tokens.access_token;
 }
 
-export async function fetchCalendarEvents(accessToken: string, daysAhead: number): Promise<any[]> {
+export async function fetchCalendarEvents(accessToken: string, daysAhead: number): Promise<{ events: any[]; debug: { calendars: string[]; timeMin: string; timeMax: string } }> {
   const now = new Date();
   const start = new Date(now);
   start.setDate(start.getDate() + 1);
@@ -49,27 +49,39 @@ export async function fetchCalendarEvents(accessToken: string, daysAhead: number
   const end = new Date(start);
   end.setDate(end.getDate() + daysAhead);
 
-  const params = new URLSearchParams({
-    timeMin: start.toISOString(),
-    timeMax: end.toISOString(),
-    singleEvents: "true",
-    orderBy: "startTime",
-    maxResults: "50",
-  });
+  const timeMin = start.toISOString();
+  const timeMax = end.toISOString();
 
-  const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+  // List all calendars
+  const calRes = await fetch(
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
+  const calendars: { id: string; summary: string }[] = calRes.ok
+    ? ((await calRes.json()).items || []).map((c: any) => ({ id: c.id, summary: c.summary }))
+    : [{ id: "primary", summary: "primary" }];
 
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.items || []).map((e: any) => ({
-    summary: e.summary,
-    start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end?.date,
-    description: e.description?.slice(0, 200),
-  }));
+  const allEvents: any[] = [];
+  for (const cal of calendars) {
+    const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "50" });
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) continue;
+    const data = await res.json();
+    for (const e of data.items || []) {
+      allEvents.push({
+        summary: e.summary,
+        start: e.start?.dateTime || e.start?.date,
+        end: e.end?.dateTime || e.end?.date,
+        description: e.description?.slice(0, 200),
+        calendar: cal.summary,
+      });
+    }
+  }
+
+  return { events: allEvents, debug: { calendars: calendars.map(c => c.summary), timeMin, timeMax } };
 }
 
 export async function fetchRecentEmails(accessToken: string, days: number): Promise<any[]> {

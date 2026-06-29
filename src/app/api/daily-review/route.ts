@@ -26,13 +26,15 @@ export async function POST() {
   const { data: projects } = await admin.from("projects").select("name");
   const projectNames = (projects || []).map((p: any) => p.name);
 
-  const [events, emails] = await Promise.all([
+  const [calendarResult, emails] = await Promise.all([
     fetchCalendarEvents(accessToken, 2),
     fetchRecentEmails(accessToken, 7),
   ]);
 
+  const { events, debug: calendarDebug } = calendarResult;
+
   if (events.length === 0 && emails.length === 0) {
-    return NextResponse.json({ suggestions: [], message: "Aucun événement ni email récent" });
+    return NextResponse.json({ suggestions: [], message: "Aucun événement ni email récent", calendar_debug: calendarDebug, emails_count: 0 });
   }
 
   const prompt = buildPrompt(events, emails, projectNames);
@@ -68,6 +70,7 @@ export async function POST() {
     suggestions,
     events_count: events.length,
     emails_count: emails.length,
+    calendar_debug: calendarDebug,
   });
 }
 

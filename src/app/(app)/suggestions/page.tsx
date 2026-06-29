@@ -54,10 +54,12 @@ export default function SuggestionsPage() {
         return;
       }
       const count = data.suggestions?.length || 0;
+      const cals = data.calendar_debug?.calendars?.join(", ") || "?";
+      const range = data.calendar_debug ? `du ${data.calendar_debug.timeMin?.split("T")[0]} au ${data.calendar_debug.timeMax?.split("T")[0]}` : "";
       setSyncResult(
         count > 0
-          ? `${count} suggestion${count > 1 ? "s" : ""} trouvée${count > 1 ? "s" : ""} (${data.events_count} événements, ${data.emails_count} emails analysés)`
-          : `Rien à signaler (${data.events_count} événements, ${data.emails_count} emails analysés)`
+          ? `${count} suggestion${count > 1 ? "s" : ""} trouvée${count > 1 ? "s" : ""} · ${data.events_count} événements, ${data.emails_count} emails\nCalendriers : ${cals} ${range}`
+          : `Rien à signaler · ${data.events_count} événements, ${data.emails_count} emails\nCalendriers : ${cals} ${range}`
       );
       await load();
     } catch {
@@ -113,7 +115,7 @@ export default function SuggestionsPage() {
       </div>
 
       {syncResult && (
-        <div className="bg-surface-container rounded-2xl px-4 py-3 text-xs text-on-surface-variant">
+        <div className="bg-surface-container rounded-2xl px-4 py-3 text-xs text-on-surface-variant whitespace-pre-line">
           {syncResult}
         </div>
       )}

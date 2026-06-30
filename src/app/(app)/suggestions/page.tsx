@@ -27,6 +27,7 @@ export default function SuggestionsPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [tokenExpired, setTokenExpired] = useState(false);
   const supabase = createClient();
 
   useEffect(() => { load(); }, []);
@@ -46,11 +47,16 @@ export default function SuggestionsPage() {
   async function runReview() {
     setSyncing(true);
     setSyncResult(null);
+    setTokenExpired(false);
     try {
       const res = await fetch("/api/daily-review", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        setSyncResult(data.error || "Erreur");
+        if (res.status === 400 && data.error?.includes("Google token")) {
+          setTokenExpired(true);
+        } else {
+          setSyncResult(data.error || "Erreur");
+        }
         return;
       }
       const count = data.suggestions?.length || 0;
@@ -67,6 +73,17 @@ export default function SuggestionsPage() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  async function reconnectGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/api/auth/callback`,
+        scopes: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly",
+        queryParams: { access_type: "offline", prompt: "consent" },
+      },
+    });
   }
 
   async function accept(s: Suggestion) {
@@ -113,6 +130,20 @@ export default function SuggestionsPage() {
           )}
         </button>
       </div>
+
+      {tokenExpired && (
+        <div className="bg-error/10 rounded-2xl px-4 py-3 space-y-2.5">
+          <p className="text-xs text-on-surface-variant">
+            La connexion à Google a expiré. Reconnecte-toi pour relancer la revue du soir.
+          </p>
+          <button
+            onClick={reconnectGoogle}
+            className="bg-error text-on-error px-4 py-1.5 rounded-full text-xs font-semibold"
+          >
+            Reconnecter Google
+          </button>
+        </div>
+      )}
 
       {syncResult && (
         <div className="bg-surface-container rounded-2xl px-4 py-3 text-xs text-on-surface-variant whitespace-pre-line">

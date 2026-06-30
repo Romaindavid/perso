@@ -285,7 +285,21 @@ export default function ProfilePage() {
         </button>
       )}
       {notifStatus === "granted" && (
-        <p className="text-center text-xs text-on-surface-variant">🔔 Notifications activées</p>
+        <>
+          <p className="text-center text-xs text-on-surface-variant">🔔 Notifications activées</p>
+          <button
+            onClick={async () => {
+              const reg = await navigator.serviceWorker.ready;
+              reg.showNotification("Perso", {
+                body: "Test de notification 🎉",
+                icon: "/icon-192.png",
+              });
+            }}
+            className="w-full py-2.5 rounded-full font-medium text-sm text-on-surface-variant bg-surface-container"
+          >
+            Tester la notification
+          </button>
+        </>
       )}
 
       <button

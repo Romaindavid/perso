@@ -35,11 +35,15 @@ export default function RecapPage() {
     setLoading(false);
   }
 
-  async function generate() {
+  async function generate(weekStart?: string) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch("/api/weekly-recap", { method: "POST" });
+      const res = await fetch("/api/weekly-recap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(weekStart ? { weekStart } : {}),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Erreur");
@@ -96,12 +100,30 @@ export default function RecapPage() {
       </div>
 
       <button
-        onClick={generate}
+        onClick={() => generate()}
         disabled={generating}
         className="w-full bg-primary text-on-primary py-3 rounded-full font-semibold text-sm disabled:opacity-50 transition-opacity"
       >
-        {generating ? "Génération en cours..." : "📊 Générer le récap de la semaine"}
+        {generating ? "Génération en cours..." : "📊 Générer le récap de la semaine en cours"}
       </button>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="date"
+          id="weekStartPicker"
+          className="flex-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+        />
+        <button
+          onClick={() => {
+            const input = document.getElementById("weekStartPicker") as HTMLInputElement;
+            if (input.value) generate(input.value);
+          }}
+          disabled={generating}
+          className="bg-surface-container px-4 py-2 rounded-xl text-xs font-semibold disabled:opacity-50"
+        >
+          Semaine passée
+        </button>
+      </div>
 
       {error && (
         <div className="bg-error/10 rounded-2xl px-4 py-3 text-xs text-on-surface-variant">

@@ -13,6 +13,7 @@ Ton : direct, factuel et honnête. Pas de coaching artificiel, pas de ton motiva
 Forme :
 - Un seul emoji discret en préfixe de chaque titre de section, aucun emoji dans le corps du texte
 - Phrases courtes, listes à puces plutôt que paragraphes denses
+- N'utilise JAMAIS de tableaux markdown (illisibles sur mobile)
 - Pas de reconstitution jour par jour — synthétise
 
 Structure markdown stricte, avec ces sections exactes :

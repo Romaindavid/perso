@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 function scheduleJournalReminder(reg: ServiceWorkerRegistration) {
   const now = new Date();
   const target = new Date(now);
@@ -20,31 +18,24 @@ function scheduleJournalReminder(reg: ServiceWorkerRegistration) {
   }, delay);
 }
 
-export default function PushSubscriber() {
-  useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
+export async function enableNotifications(): Promise<"granted" | "denied" | "unsupported"> {
+  if (!("serviceWorker" in navigator) || !("Notification" in window)) return "unsupported";
 
-    navigator.serviceWorker.register("/sw.js").then(async (reg) => {
-      if ("Notification" in window && Notification.permission === "default") {
-        await Notification.requestPermission();
-      }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return "denied";
 
-      if (Notification.permission === "granted") {
-        scheduleJournalReminder(reg);
-      }
+  scheduleJournalReminder(reg);
 
-      if (!("PushManager" in window)) return;
-      const existing = await reg.pushManager.getSubscription();
-      if (existing) return;
-
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidKey) return;
-
+  if ("PushManager" in window) {
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (vapidKey) {
       try {
-        const sub = await reg.pushManager.subscribe({
+        const existing = await reg.pushManager.getSubscription();
+        const sub = existing || (await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: vapidKey,
-        });
+        }));
 
         await fetch("/api/push-subscribe", {
           method: "POST",
@@ -52,10 +43,15 @@ export default function PushSubscriber() {
           body: JSON.stringify(sub.toJSON()),
         });
       } catch {
-        // User denied notifications
+        // Push subscription failed, local notifications still work
       }
-    });
-  }, []);
+    }
+  }
 
-  return null;
+  return "granted";
+}
+
+export function notificationStatus(): "granted" | "denied" | "default" | "unsupported" {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  return Notification.permission;
 }

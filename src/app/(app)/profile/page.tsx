@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { enableNotifications, notificationStatus } from "@/components/PushSubscriber";
 
 interface Profile {
   birth_date: string;
@@ -105,6 +106,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [notifStatus, setNotifStatus] = useState<"granted" | "denied" | "default" | "unsupported">("default");
   const router = useRouter();
 
   useEffect(() => {
@@ -114,7 +116,13 @@ export default function ProfilePage() {
         setProfile({ ...defaultProfile, ...data });
         setLoading(false);
       });
+    setNotifStatus(notificationStatus());
   }, []);
+
+  async function handleEnableNotifications() {
+    const result = await enableNotifications();
+    setNotifStatus(result === "granted" ? "granted" : "denied");
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -267,6 +275,18 @@ export default function ProfilePage() {
       >
         🔍 Revue du soir
       </Link>
+
+      {notifStatus !== "granted" && notifStatus !== "unsupported" && (
+        <button
+          onClick={handleEnableNotifications}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-medium text-base border border-primary text-primary"
+        >
+          🔔 Activer les notifications
+        </button>
+      )}
+      {notifStatus === "granted" && (
+        <p className="text-center text-xs text-on-surface-variant">🔔 Notifications activées</p>
+      )}
 
       <button
         onClick={async () => {

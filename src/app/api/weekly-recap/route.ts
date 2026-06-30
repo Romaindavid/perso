@@ -48,15 +48,20 @@ function mondayOf(date: Date): Date {
   return d;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
-  const now = new Date();
+  const body = await request.json().catch(() => ({}));
+  const now = body.weekStart ? new Date(body.weekStart + "T12:00:00") : new Date();
   const weekStart = mondayOf(now);
   const weekStartStr = weekStart.toISOString().split("T")[0];
-  const nowIso = now.toISOString();
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  const periodEnd = body.weekStart ? weekEnd : now;
+  const nowIso = periodEnd.toISOString();
 
   const [
     { data: activities },
@@ -67,10 +72,10 @@ export async function POST() {
     { data: completedTasks },
     { data: pastRecaps },
   ] = await Promise.all([
-    supabase.from("garmin_activities").select("*").gte("date", weekStartStr).order("date"),
-    supabase.from("garmin_sleep").select("*").gte("date", weekStartStr).order("date"),
-    supabase.from("garmin_metrics").select("*").gte("date", weekStartStr).order("date"),
-    supabase.from("journal_entries").select("*").gte("created_at", weekStart.toISOString()).order("created_at"),
+    supabase.from("garmin_activities").select("*").gte("date", weekStartStr).lte("date", nowIso.split("T")[0]).order("date"),
+    supabase.from("garmin_sleep").select("*").gte("date", weekStartStr).lte("date", nowIso.split("T")[0]).order("date"),
+    supabase.from("garmin_metrics").select("*").gte("date", weekStartStr).lte("date", nowIso.split("T")[0]).order("date"),
+    supabase.from("journal_entries").select("*").gte("created_at", weekStart.toISOString()).lte("created_at", nowIso).order("created_at"),
     supabase.from("project_todos").select("*, projects(name)").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
     supabase.from("tasks").select("*").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
     supabase.from("weekly_recaps").select("week_start, key_takeaway, watch_points").order("week_start", { ascending: false }).limit(3),
@@ -100,7 +105,7 @@ export async function POST() {
     return NextResponse.json({ error: "Aucune donnée cette semaine pour générer un récap" }, { status: 400 });
   }
 
-  const userMessage = `Voici les données de la semaine du ${weekStartStr} (lundi 00h00) à aujourd'hui :\n\n${parts.join("\n\n---\n\n")}\n\nGénère le récap hebdomadaire.`;
+  const userMessage = `Voici les données de la semaine du ${weekStartStr} (lundi 00h00) au ${periodEnd.toISOString().split("T")[0]} :\n\n${parts.join("\n\n---\n\n")}\n\nGénère le récap hebdomadaire.`;
 
   const content = await generateWithContext(SYSTEM_PROMPT, userMessage);
 
@@ -112,7 +117,7 @@ export async function POST() {
     .insert({
       user_id: user.id,
       week_start: weekStartStr,
-      week_end: now.toISOString().split("T")[0],
+      week_end: periodEnd.toISOString().split("T")[0],
       content,
       key_takeaway: keyTakeawayMatch?.[1]?.trim() || null,
       watch_points: watchPointsMatch?.[1]?.trim().slice(0, 500) || null,

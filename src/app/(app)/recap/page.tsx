@@ -82,7 +82,7 @@ export default function RecapPage() {
           <span className="text-xs text-on-surface-variant">{formatWeek(openRecap.week_start, openRecap.week_end)}</span>
         </div>
         <div className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]">
-          <div className="prose prose-sm max-w-none prose-headings:text-on-surface prose-headings:font-semibold prose-p:text-on-surface-variant prose-strong:text-on-surface prose-li:text-on-surface-variant">
+          <div className="prose prose-sm max-w-none prose-headings:text-on-surface prose-headings:font-bold prose-h2:mt-7 prose-h2:mb-3 first:prose-h2:mt-0 prose-p:text-on-surface-variant prose-p:mb-4 prose-strong:text-on-surface prose-li:text-on-surface-variant prose-ul:mb-4">
             <ReactMarkdown>{openRecap.content}</ReactMarkdown>
           </div>
         </div>

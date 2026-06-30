@@ -270,10 +270,17 @@ export default function ProfilePage() {
 
       {/* Liens */}
       <Link
+        href="/recap"
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-medium text-base border border-primary text-primary"
+      >
+        📊 Récap hebdo
+      </Link>
+
+      <Link
         href="/suggestions"
         className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-medium text-base border border-primary text-primary"
       >
-        🔍 Revue du soir
+        🔍 Importer des tâches
       </Link>
 
       {notifStatus !== "granted" && notifStatus !== "unsupported" && (

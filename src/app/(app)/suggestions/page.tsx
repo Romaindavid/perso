@@ -113,7 +113,7 @@ export default function SuggestionsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Avatar />
-          <h1 className="text-xl font-bold tracking-tight">Suggestions</h1>
+          <h1 className="text-xl font-bold tracking-tight">Importer des tâches</h1>
         </div>
         <button
           onClick={runReview}
@@ -126,7 +126,7 @@ export default function SuggestionsPage() {
               Analyse...
             </>
           ) : (
-            "🔍 Revue du soir"
+            "🔍 Analyser"
           )}
         </button>
       </div>

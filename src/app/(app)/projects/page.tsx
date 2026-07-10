@@ -109,7 +109,12 @@ export default function ProjectsPage() {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   }
 
+  const [showDoneTodos, setShowDoneTodos] = useState<Record<string, boolean>>({});
+  const [showDoneTasks, setShowDoneTasks] = useState(false);
+
   const filteredTasks = filterTag ? tasks.filter(t => t.tag === filterTag) : tasks;
+  const activeTasks = filteredTasks.filter(t => !t.done);
+  const doneTasks = filteredTasks.filter(t => t.done);
 
   const tagColors: Record<string, string> = {
     "Snooze SAS": "bg-primary text-on-primary",
@@ -180,21 +185,13 @@ export default function ProjectsPage() {
                       To-do prochaine édition
                     </p>
                     <div className="space-y-1.5">
-                      {projectTodos.map(todo => (
+                      {projectTodos.filter(t => !t.done).map(todo => (
                         <div key={todo.id} className="flex items-center gap-2.5 group">
                           <button
                             onClick={() => toggleTodo(todo.id, todo.done)}
-                            className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                              todo.done ? "bg-primary border-primary" : "border-outline-variant"
-                            }`}
-                          >
-                            {todo.done && (
-                              <svg className="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                              </svg>
-                            )}
-                          </button>
-                          <span className={`text-sm flex-1 ${todo.done ? "line-through text-outline" : ""}`}>{todo.content}</span>
+                            className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors border-outline-variant"
+                          />
+                          <span className="text-sm flex-1">{todo.content}</span>
                           <button
                             onClick={() => deleteTodo(todo.id)}
                             className="opacity-0 group-hover:opacity-100 text-outline hover:text-error text-xs transition-opacity"
@@ -204,6 +201,42 @@ export default function ProjectsPage() {
                         </div>
                       ))}
                     </div>
+                    {projectTodos.some(t => t.done) && (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => setShowDoneTodos(prev => ({ ...prev, [project.id]: !prev[project.id] }))}
+                          className="flex items-center gap-1.5 text-[10px] font-semibold text-outline uppercase tracking-wider"
+                        >
+                          <svg className={`w-3 h-3 transition-transform ${showDoneTodos[project.id] ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                          </svg>
+                          Archive ({projectTodos.filter(t => t.done).length})
+                        </button>
+                        {showDoneTodos[project.id] && (
+                          <div className="space-y-1.5 mt-1.5">
+                            {projectTodos.filter(t => t.done).map(todo => (
+                              <div key={todo.id} className="flex items-center gap-2.5 group">
+                                <button
+                                  onClick={() => toggleTodo(todo.id, todo.done)}
+                                  className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors bg-primary border-primary"
+                                >
+                                  <svg className="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                  </svg>
+                                </button>
+                                <span className="text-sm flex-1 line-through text-outline">{todo.content}</span>
+                                <button
+                                  onClick={() => deleteTodo(todo.id)}
+                                  className="opacity-0 group-hover:opacity-100 text-outline hover:text-error text-xs transition-opacity"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -289,26 +322,18 @@ export default function ProjectsPage() {
           ))}
         </div>
 
-        {/* Task list */}
+        {/* Task list — active */}
         <div className="space-y-2">
-          {filteredTasks.map(task => (
+          {activeTasks.map(task => (
             <div
               key={task.id}
               className="bg-white rounded-2xl px-4 py-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] flex items-center gap-3"
             >
               <button
                 onClick={() => toggleTask(task.id, task.done)}
-                className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                  task.done ? "bg-primary border-primary" : "border-outline-variant"
-                }`}
-              >
-                {task.done && (
-                  <svg className="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                )}
-              </button>
-              <span className={`flex-1 text-sm ${task.done ? "line-through text-outline" : ""}`}>{task.content}</span>
+                className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors border-outline-variant"
+              />
+              <span className="flex-1 text-sm">{task.content}</span>
               {task.tag && (
                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${tagColors[task.tag] || "bg-surface-container text-on-surface-variant"}`}>
                   {task.tag}
@@ -316,10 +341,51 @@ export default function ProjectsPage() {
               )}
             </div>
           ))}
-          {filteredTasks.length === 0 && (
+          {activeTasks.length === 0 && (
             <p className="text-sm text-outline text-center py-6">Aucune tâche</p>
           )}
         </div>
+
+        {/* Archive — done tasks */}
+        {doneTasks.length > 0 && (
+          <div className="mt-4">
+            <button
+              onClick={() => setShowDoneTasks(prev => !prev)}
+              className="flex items-center gap-1.5 text-[10px] font-semibold text-outline uppercase tracking-wider mb-2"
+            >
+              <svg className={`w-3 h-3 transition-transform ${showDoneTasks ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
+              Archive ({doneTasks.length})
+            </button>
+            {showDoneTasks && (
+              <div className="space-y-2">
+                {doneTasks.map(task => (
+                  <div
+                    key={task.id}
+                    className="bg-white rounded-2xl px-4 py-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] flex items-center gap-3"
+                  >
+                    <button
+                      onClick={() => toggleTask(task.id, task.done)}
+                      className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors bg-primary border-primary"
+                    >
+                      <svg className="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    </button>
+                    <span className="flex-1 text-sm line-through text-outline">{task.content}</span>
+                    {task.tag && (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${tagColors[task.tag] || "bg-surface-container text-on-surface-variant"}`}>
+                        {task.tag}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

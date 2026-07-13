@@ -24,6 +24,8 @@ export default function RecapPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openRecap, setOpenRecap] = useState<Recap | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => { load(); }, []);
 
@@ -35,14 +37,18 @@ export default function RecapPage() {
     setLoading(false);
   }
 
-  async function generate(weekStart?: string) {
+  async function generate() {
+    if (!dateFrom || !dateTo) {
+      setError("Choisis une date de début et une date de fin");
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
       const res = await fetch("/api/weekly-recap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(weekStart ? { weekStart } : {}),
+        body: JSON.stringify({ weekStart: dateFrom, weekEnd: dateTo }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -55,6 +61,14 @@ export default function RecapPage() {
       setError("Erreur réseau");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function deleteRecap(id: string) {
+    const res = await fetch(`/api/weekly-recap?id=${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setRecaps(prev => prev.filter(r => r.id !== id));
+      if (openRecap?.id === id) setOpenRecap(null);
     }
   }
 
@@ -79,7 +93,20 @@ export default function RecapPage() {
             </svg>
             Retour
           </button>
-          <span className="text-xs text-on-surface-variant">{formatWeek(openRecap.week_start, openRecap.week_end)}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-on-surface-variant">{formatWeek(openRecap.week_start, openRecap.week_end)}</span>
+            <button
+              onClick={() => {
+                if (confirm("Supprimer ce récap ?")) deleteRecap(openRecap.id);
+              }}
+              className="text-outline hover:text-error transition-colors"
+              title="Supprimer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]">
           <div className="prose prose-sm max-w-none prose-headings:text-on-surface prose-headings:font-bold prose-h2:mt-7 prose-h2:mb-3 first:prose-h2:mt-0 prose-p:text-on-surface-variant prose-p:mb-4 prose-strong:text-on-surface prose-li:text-on-surface-variant prose-ul:mb-4">
@@ -99,29 +126,33 @@ export default function RecapPage() {
         </div>
       </div>
 
-      <button
-        onClick={() => generate()}
-        disabled={generating}
-        className="w-full bg-primary text-on-primary py-3 rounded-full font-semibold text-sm disabled:opacity-50 transition-opacity"
-      >
-        {generating ? "Génération en cours..." : "📊 Générer le récap de la semaine en cours"}
-      </button>
-
-      <div className="flex items-center gap-2">
-        <input
-          type="date"
-          id="weekStartPicker"
-          className="flex-1 bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
-        />
+      <div className="bg-white rounded-2xl p-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-3">
+        <div className="flex gap-2 items-center">
+          <div className="flex-1 space-y-1">
+            <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Du</p>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              className="w-full bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex-1 space-y-1">
+            <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Au</p>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              className="w-full bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+            />
+          </div>
+        </div>
         <button
-          onClick={() => {
-            const input = document.getElementById("weekStartPicker") as HTMLInputElement;
-            if (input.value) generate(input.value);
-          }}
+          onClick={generate}
           disabled={generating}
-          className="bg-surface-container px-4 py-2 rounded-xl text-xs font-semibold disabled:opacity-50"
+          className="w-full bg-primary text-on-primary py-2.5 rounded-full font-semibold text-sm disabled:opacity-50 transition-opacity"
         >
-          Semaine passée
+          {generating ? "Génération en cours..." : "📊 Générer"}
         </button>
       </div>
 
@@ -141,19 +172,26 @@ export default function RecapPage() {
           <h2 className="text-sm font-semibold text-on-surface-variant mb-3">Historique</h2>
           <div className="space-y-2">
             {recaps.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setOpenRecap(r)}
-                className="w-full text-left bg-surface-container-low rounded-2xl px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-colors"
-              >
-                <span className="text-lg">📊</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">Semaine du {formatWeek(r.week_start, r.week_end)}</p>
-                </div>
-                <svg className="w-4 h-4 text-outline flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
-              </button>
+              <div key={r.id} className="bg-surface-container-low rounded-2xl px-4 py-3 flex items-center gap-3">
+                <button
+                  onClick={() => setOpenRecap(r)}
+                  className="flex items-center gap-3 flex-1 text-left"
+                >
+                  <span className="text-lg">📊</span>
+                  <p className="text-sm font-medium flex-1">{formatWeek(r.week_start, r.week_end)}</p>
+                  <svg className="w-4 h-4 text-outline flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => { if (confirm("Supprimer ce récap ?")) deleteRecap(r.id); }}
+                  className="text-outline hover:text-error transition-colors flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  </svg>
+                </button>
+              </div>
             ))}
           </div>
         </div>

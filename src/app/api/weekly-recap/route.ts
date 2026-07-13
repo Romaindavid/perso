@@ -68,15 +68,14 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
-  const now = body.weekStart ? new Date(body.weekStart + "T12:00:00") : new Date();
-  const weekStart = mondayOf(now);
+  const weekStart = body.weekStart ? new Date(body.weekStart + "T00:00:00") : mondayOf(new Date());
   const weekStartStr = weekStart.toISOString().split("T")[0];
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-  const periodEnd = body.weekStart ? weekEnd : now;
-  const nowIso = periodEnd.toISOString();
-  const dateEnd = nowIso.split("T")[0];
+  const dateEnd: string = body.weekEnd ?? (() => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 6);
+    return d.toISOString().split("T")[0];
+  })();
+  const nowIso = dateEnd + "T23:59:59.999Z";
 
   const [
     { data: activities },
@@ -164,4 +163,19 @@ export async function GET() {
     .limit(20);
 
   return NextResponse.json({ recaps: data || [] });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id manquant" }, { status: 400 });
+
+  const { error } = await supabase.from("weekly_recaps").delete().eq("id", id).eq("user_id", user.id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
 }

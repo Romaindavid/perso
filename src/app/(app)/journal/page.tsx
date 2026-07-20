@@ -90,6 +90,7 @@ export default function JournalPage() {
   const [category, setCategory] = useState<JournalCategory>("quotidien");
   const [content, setContent] = useState("");
   const [mood, setMood] = useState<string | null>(null);
+  const [entryDate, setEntryDate] = useState(localDate(new Date()));
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -129,6 +130,7 @@ export default function JournalPage() {
     const payload: Record<string, unknown> = {
       content: content.trim(),
       category,
+      created_at: new Date(entryDate + "T12:00:00").toISOString(),
     };
     if (category === "quotidien" && mood) {
       payload.mood = mood;
@@ -138,6 +140,7 @@ export default function JournalPage() {
     if (!error) {
       setContent("");
       setMood(null);
+      setEntryDate(localDate(new Date()));
       setShowForm(false);
       await loadAll();
     }
@@ -238,21 +241,29 @@ export default function JournalPage() {
       {/* Form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-4">
-          <div className="flex gap-2 flex-wrap">
-            {categories.map((cat) => (
-              <button
-                key={cat.value}
-                type="button"
-                onClick={() => setCategory(cat.value)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                  category === cat.value
-                    ? "bg-primary text-on-primary"
-                    : "bg-surface-container text-on-surface-variant"
-                }`}
-              >
-                {cat.emoji} {cat.label}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex gap-2 flex-wrap flex-1">
+              {categories.map((cat) => (
+                <button
+                  key={cat.value}
+                  type="button"
+                  onClick={() => setCategory(cat.value)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    category === cat.value
+                      ? "bg-primary text-on-primary"
+                      : "bg-surface-container text-on-surface-variant"
+                  }`}
+                >
+                  {cat.emoji} {cat.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="date"
+              value={entryDate}
+              onChange={e => setEntryDate(e.target.value)}
+              className="bg-surface border border-outline-variant rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary"
+            />
           </div>
 
           {category === "quotidien" && (
@@ -287,7 +298,7 @@ export default function JournalPage() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => { setShowForm(false); setContent(""); setMood(null); }}
+              onClick={() => { setShowForm(false); setContent(""); setMood(null); setEntryDate(localDate(new Date())); }}
               className="flex-1 py-2.5 rounded-full text-xs font-semibold text-on-surface-variant bg-surface-container"
             >
               Annuler

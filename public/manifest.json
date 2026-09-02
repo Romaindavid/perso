@@ -2,7 +2,7 @@
   "name": "Perso",
   "short_name": "Perso",
   "description": "Assistant santé personnelle unifié",
-  "start_url": "/dashboard",
+  "start_url": "/journal",
   "display": "standalone",
   "background_color": "#fbf9f5",
   "theme_color": "#386458",

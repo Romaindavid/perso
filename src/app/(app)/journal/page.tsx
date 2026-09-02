@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "@/components/Avatar";
-import type { JournalCategory } from "@/types";
 
 interface JournalEntry {
   id: string;
@@ -35,13 +34,6 @@ interface CompletedTodo {
   tag?: string;
 }
 
-const categories: { value: JournalCategory; label: string; emoji: string }[] = [
-  { value: "quotidien", label: "Quotidien", emoji: "📝" },
-  { value: "sport", label: "Sport", emoji: "🏃" },
-  { value: "psy", label: "Psy", emoji: "🧠" },
-  { value: "medical", label: "Médical", emoji: "🩺" },
-];
-
 const moods = [
   { value: "super", emoji: "😄", label: "Super" },
   { value: "bien", emoji: "🙂", label: "Bien" },
@@ -50,34 +42,31 @@ const moods = [
   { value: "anxieux", emoji: "😰", label: "Anxieux" },
 ];
 
-const activityIcons: Record<string, string> = {
-  cycling: "🚴", running: "🏃", strength_training: "🏋️", windsurfing_v2: "🪁",
-  walking: "🚶", hiking: "🥾", swimming: "🏊", yoga: "🧘", rowing: "🚣",
+const activityLabels: Record<string, string> = {
+  cycling: "vélo", running: "course", strength_training: "muscu", windsurfing_v2: "windsurf",
+  walking: "marche", hiking: "rando", swimming: "natation", yoga: "yoga", rowing: "rameur",
 };
 
 function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function formatDateHeader(d: string) {
-  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function dayHeader(dateStr: string, today: string, yesterday: string): { primary: string; secondary: string | null } {
+  const longDate = capitalize(
+    new Date(dateStr + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })
+  );
+  if (dateStr === today) return { primary: "Aujourd'hui", secondary: longDate };
+  if (dateStr === yesterday) return { primary: "Hier", secondary: longDate };
+  return { primary: longDate, secondary: null };
 }
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
-
-type TimelineItem = {
-  date: string;
-  sortKey: string;
-  type: "activity" | "journal" | "sleep";
-  icon: string;
-  title: string;
-  subtitle?: string;
-  mood?: string | null;
-  content?: string;
-  category?: string;
-};
 
 export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -87,7 +76,6 @@ export default function JournalPage() {
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
-  const [category, setCategory] = useState<JournalCategory>("quotidien");
   const [content, setContent] = useState("");
   const [mood, setMood] = useState<string | null>(null);
   const [entryDate, setEntryDate] = useState(localDate(new Date()));
@@ -140,12 +128,10 @@ export default function JournalPage() {
     setSaving(true);
     const payload: Record<string, unknown> = {
       content: content.trim(),
-      category,
+      category: "quotidien",
       created_at: new Date(entryDate + "T12:00:00").toISOString(),
     };
-    if (category === "quotidien" && mood) {
-      payload.mood = mood;
-    }
+    if (mood) payload.mood = mood;
 
     const { error } = await supabase.from("journal_entries").insert(payload);
     if (!error) {
@@ -158,70 +144,21 @@ export default function JournalPage() {
     setSaving(false);
   }
 
-  // Build timeline
-  const timeline: TimelineItem[] = [];
+  // Group everything by date
+  const today = localDate(new Date());
+  const yesterday = localDate(new Date(Date.now() - 86400000));
 
-  entries.forEach(j => {
-    const catInfo = categories.find(c => c.value === j.category);
-    const moodInfo = j.mood ? moods.find(m => m.value === j.mood) : null;
-    timeline.push({
-      date: j.created_at.split("T")[0],
-      sortKey: j.created_at,
-      type: "journal",
-      icon: moodInfo?.emoji || catInfo?.emoji || "📝",
-      title: catInfo?.label || j.category,
-      subtitle: formatTime(j.created_at),
-      mood: j.mood,
-      content: j.content,
-      category: j.category,
-    });
-  });
+  const dates = new Set<string>();
+  entries.forEach(e => dates.add(e.created_at.split("T")[0]));
+  activities.forEach(a => dates.add(a.date));
+  sleepData.forEach(s => dates.add(s.date));
+  completedTodos.forEach(t => dates.add(t.completed_at.split("T")[0]));
 
-  activities.forEach(a => {
-    const label = a.type.replace(/_/g, " ");
-    timeline.push({
-      date: a.date,
-      sortKey: a.date + "T12:00:00",
-      type: "activity",
-      icon: activityIcons[a.type] || "🏅",
-      title: label.charAt(0).toUpperCase() + label.slice(1),
-      subtitle: `${a.duration_minutes} min · ${a.intensity || "—"} · ${a.calories} kcal`,
-    });
-  });
+  const sortedDates = Array.from(dates).sort((a, b) => b.localeCompare(a));
 
-  sleepData.forEach(s => {
-    const h = Math.floor(s.duration_hours);
-    const m = Math.round((s.duration_hours % 1) * 60);
-    timeline.push({
-      date: s.date,
-      sortKey: s.date + "T06:00:00",
-      type: "sleep",
-      icon: "😴",
-      title: `${h}h${m ? String(m).padStart(2, "0") : ""} de sommeil`,
-      subtitle: s.quality?.toLowerCase() || undefined,
-    });
-  });
-
-  completedTodos.forEach(t => {
-    const label = t.project_name || t.tag || "Tâche";
-    timeline.push({
-      date: t.completed_at.split("T")[0],
-      sortKey: t.completed_at,
-      type: "activity",
-      icon: "✅",
-      title: t.content,
-      subtitle: label,
-    });
-  });
-
-  timeline.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
-
-  const grouped = new Map<string, TimelineItem[]>();
-  timeline.forEach(item => {
-    const existing = grouped.get(item.date) || [];
-    existing.push(item);
-    grouped.set(item.date, existing);
-  });
+  const sleepByDate = new Map(sleepData.map(s => [s.date, s]));
+  const activitiesByDate = new Map<string, Activity>();
+  activities.forEach(a => { if (!activitiesByDate.has(a.date)) activitiesByDate.set(a.date, a); });
 
   if (loading) {
     return (
@@ -232,55 +169,28 @@ export default function JournalPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar />
-          <h1 className="text-xl font-bold tracking-tight">Journal</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
-            title="Synchroniser Garmin"
-          >
-            <svg className={`w-5 h-5 ${syncing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.356v4.992" />
-            </svg>
-          </button>
-          {!showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="bg-primary text-on-primary px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1"
-            >
-              + Nouvelle entrée
-            </button>
-          )}
-        </div>
+      <div className="flex items-center gap-3">
+        <Avatar />
+        <h1 className="flex-1 text-[22px] font-bold -tracking-[0.02em] text-on-surface">Journal</h1>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="w-10 h-10 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center transition-colors disabled:opacity-50"
+          title="Synchroniser Garmin"
+        >
+          <svg className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.356v4.992" />
+          </svg>
+        </button>
       </div>
 
       {/* Form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-4">
+        <form onSubmit={handleSubmit} className="mt-5 bg-white rounded-[26px] p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-2 flex-wrap flex-1">
-              {categories.map((cat) => (
-                <button
-                  key={cat.value}
-                  type="button"
-                  onClick={() => setCategory(cat.value)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                    category === cat.value
-                      ? "bg-primary text-on-primary"
-                      : "bg-surface-container text-on-surface-variant"
-                  }`}
-                >
-                  {cat.emoji} {cat.label}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-semibold text-on-surface-variant">Nouvelle entrée</p>
             <input
               type="date"
               value={entryDate}
@@ -289,31 +199,29 @@ export default function JournalPage() {
             />
           </div>
 
-          {category === "quotidien" && (
-            <div>
-              <p className="text-xs font-semibold text-on-surface-variant mb-2">Comment tu te sens ?</p>
-              <div className="flex justify-between">
-                {moods.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => setMood(mood === m.value ? null : m.value)}
-                    className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-colors ${
-                      mood === m.value ? "bg-tertiary-container" : "hover:bg-surface-container"
-                    }`}
-                  >
-                    <span className="text-2xl">{m.emoji}</span>
-                    <span className="text-[10px] font-medium text-on-surface-variant">{m.label}</span>
-                  </button>
-                ))}
-              </div>
+          <div>
+            <p className="text-xs font-semibold text-on-surface-variant mb-2">Comment tu te sens ?</p>
+            <div className="flex justify-between">
+              {moods.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMood(mood === m.value ? null : m.value)}
+                  className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-colors ${
+                    mood === m.value ? "bg-[#ffdf96]" : "hover:bg-surface-container"
+                  }`}
+                >
+                  <span className="text-2xl">{m.emoji}</span>
+                  <span className="text-[10px] font-medium text-on-surface-variant">{m.label}</span>
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder={category === "quotidien" ? "Comment s'est passée ta journée ?" : "Qu'est-ce que tu veux noter ?"}
+            placeholder="Qu'est-ce que tu veux noter ?"
             rows={3}
             className="w-full bg-surface border border-outline-variant rounded-xl px-4 py-3 text-sm placeholder:text-outline resize-none focus:outline-none focus:border-primary transition-colors"
           />
@@ -338,83 +246,93 @@ export default function JournalPage() {
       )}
 
       {/* Timeline */}
-      <div className="space-y-6">
-        {Array.from(grouped.entries()).map(([date, items]) => (
-          <div key={date}>
-            <p className="text-xs font-semibold text-on-surface-variant mb-2.5 capitalize">
-              {formatDateHeader(date)}
-            </p>
-            <div className="space-y-2.5">
-              {items.map((item, i) => {
-                if (item.type === "journal") {
-                  const moodInfo = item.mood ? moods.find(m => m.value === item.mood) : null;
-                  const itemId = `${item.sortKey}-${i}`;
-                  const isLong = (item.content?.length || 0) > 150;
-                  const isExpanded = expandedId === itemId;
-                  return (
-                    <div
-                      key={itemId}
-                      className="bg-white rounded-2xl px-5 py-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] cursor-pointer active:scale-[0.99] transition-transform"
-                      onClick={() => isLong ? setExpandedId(isExpanded ? null : itemId) : undefined}
-                    >
-                      <div className="flex items-start justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{item.icon}</span>
-                          <span className="text-base font-bold">{item.title}</span>
-                        </div>
-                        <span className="text-xs text-on-surface-variant mt-1">{item.subtitle}</span>
-                      </div>
-                      {item.content && (
-                        <p className="text-sm text-on-surface-variant leading-relaxed mt-2 whitespace-pre-line">
-                          {isLong && !isExpanded ? item.content.slice(0, 150) + "…" : item.content}
-                        </p>
-                      )}
-                      {moodInfo && (
-                        <span className="inline-flex items-center gap-1 mt-3 text-xs font-semibold bg-tertiary-container text-on-tertiary-container px-3 py-1 rounded-full">
-                          {moodInfo.emoji} {moodInfo.label}
-                        </span>
-                      )}
-                    </div>
-                  );
-                }
+      {sortedDates.map((date, dateIdx) => {
+        const { primary, secondary } = dayHeader(date, today, yesterday);
+        const dayEntries = entries.filter(e => e.created_at.split("T")[0] === date);
+        const sleep = sleepByDate.get(date);
+        const activity = activitiesByDate.get(date);
+        const dayTodos = completedTodos.filter(t => t.completed_at.split("T")[0] === date);
 
-                if (item.type === "activity") {
-                  return (
-                    <div
-                      key={`${item.sortKey}-${i}`}
-                      className="bg-secondary-container/40 rounded-2xl px-4 py-3 flex items-center gap-3"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-lg">
-                        {item.icon}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold">{item.title}</p>
-                        <p className="text-xs text-on-surface-variant">{item.subtitle}</p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                // Sleep
+        return (
+          <div key={date} className={dateIdx === 0 ? "mt-5" : "mt-[26px]"}>
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="text-[15px] font-bold text-on-surface">{primary}</span>
+              {secondary && <span className="text-xs text-outline">{secondary}</span>}
+            </div>
+            <div className="flex flex-col gap-2">
+              {dayEntries.map(entry => {
+                const moodInfo = entry.mood ? moods.find(m => m.value === entry.mood) : null;
+                const isLong = entry.content.length > 150;
+                const isExpanded = expandedId === entry.id;
                 return (
                   <div
-                    key={`${item.sortKey}-${i}`}
-                    className="bg-surface-container-low rounded-2xl px-4 py-3 flex items-center justify-between"
+                    key={entry.id}
+                    className="bg-white rounded-[26px] p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] cursor-pointer active:scale-[0.99] transition-transform"
+                    onClick={() => isLong ? setExpandedId(isExpanded ? null : entry.id) : undefined}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="text-sm font-medium">{item.title}</span>
+                    <div className="flex items-start gap-3">
+                      <p className="flex-1 text-base leading-[26px] text-on-surface [text-wrap:pretty] whitespace-pre-line">
+                        {isLong && !isExpanded ? entry.content.slice(0, 150) + "…" : entry.content}
+                      </p>
+                      {moodInfo && <span className="flex-none text-[26px] leading-none">{moodInfo.emoji}</span>}
                     </div>
-                    {item.subtitle && (
-                      <span className="text-xs font-medium text-on-surface-variant">{item.subtitle}</span>
-                    )}
+                    <p className="text-[11.5px] text-outline mt-3.5">{formatTime(entry.created_at)}</p>
                   </div>
                 );
               })}
+
+              {(sleep || activity) && (
+                <div className="flex gap-2">
+                  <div className="flex-1 bg-[#b9ecee] rounded-[22px] p-4">
+                    <p className="text-[11px] font-bold text-[#3c6c6e] tracking-[0.04em] uppercase">sommeil</p>
+                    <p className="text-[22px] font-bold text-on-surface mt-1.5 -tracking-[0.02em]">
+                      {sleep ? `${Math.floor(sleep.duration_hours)}h${Math.round((sleep.duration_hours % 1) * 60) ? String(Math.round((sleep.duration_hours % 1) * 60)).padStart(2, "0") : "00"}` : "—"}
+                    </p>
+                    <p className="text-[11.5px] text-[#3c6c6e] mt-0.5">{sleep?.quality?.toLowerCase() || "pas de donnée"}</p>
+                  </div>
+                  <div className="flex-1 bg-surface-container rounded-[22px] p-4">
+                    <p className="text-[11px] font-bold text-on-surface-variant tracking-[0.04em] uppercase">
+                      {activity ? activityLabels[activity.type] || activity.type.replace(/_/g, " ") : "corps"}
+                    </p>
+                    <p className="text-[22px] font-bold text-on-surface mt-1.5 -tracking-[0.02em]">
+                      {activity ? `${activity.duration_minutes} min` : "—"}
+                    </p>
+                    <p className="text-[11.5px] text-outline mt-0.5">
+                      {activity ? `${activity.calories} kcal` : "pas d'activité"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {dayTodos.map(todo => (
+                <div key={todo.id} className="bg-[#ffdf96] rounded-[22px] px-[18px] py-[15px] flex items-center gap-3">
+                  <span className="flex-none w-[22px] h-[22px] rounded-full bg-[#735802] text-[#fffbff] text-[11px] font-bold flex items-center justify-center">✓</span>
+                  <div className="flex-1">
+                    <p className="text-[13.5px] font-bold text-on-surface">{todo.content}</p>
+                    <p className="text-[11.5px] text-[#735802] mt-0.5">{todo.project_name || todo.tag || "Tâche"}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
+
+      <div className="h-24" />
+
+      {/* FAB */}
+      {!showForm && (
+        <div className="fixed inset-x-0 bottom-[98px] pointer-events-none z-10">
+          <div className="max-w-lg mx-auto relative h-0">
+            <button
+              onClick={() => setShowForm(true)}
+              className="pointer-events-auto absolute right-[18px] bottom-0 w-[60px] h-[60px] rounded-full bg-primary text-white text-[26px] font-semibold flex items-center justify-center shadow-[0_12px_30px_rgba(56,100,88,0.34)]"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

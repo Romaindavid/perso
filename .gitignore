@@ -6,3 +6,4 @@ scripts/import-psy.ts
 scripts/import-medical.ts
 next-env.d.ts
 .gstack/
+.DS_Store

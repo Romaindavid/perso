@@ -30,9 +30,27 @@ interface Task {
 
 const TAGS = ["Snooze SAS", "Admin & finance", "Arpentons", "La Grange", "LinkedIn", "Autres"];
 
+// Fond actif, texte actif, fond inactif, texte inactif
+const TAG_STYLE: Record<string, { activeBg: string; activeText: string }> = {
+  "Snooze SAS": { activeBg: "#386458", activeText: "#ffffff" },
+  "Admin & finance": { activeBg: "#ffdf96", activeText: "#735802" },
+  "Arpentons": { activeBg: "#b9ecee", activeText: "#3c6c6e" },
+  "La Grange": { activeBg: "#e4e2de", activeText: "#1b1c1a" },
+  "LinkedIn": { activeBg: "#dce8f6", activeText: "#0a66c2" },
+  "Autres": { activeBg: "#c0c8c4", activeText: "#1b1c1a" },
+};
+
+// Project block tints, stable per project by index. sauge / sarcelle / neutre / or, repeating.
+const PROJECT_TINTS = [
+  { bg: "#386458", fg: "#f4fffa", sub: "rgba(244,255,250,.7)", dash: "rgba(244,255,250,.35)", iconBg: "rgba(244,255,250,.16)", tickBg: "#f4fffa" },
+  { bg: "#b9ecee", fg: "#1b1c1a", sub: "#3c6c6e", dash: "#8fc9cb", iconBg: "rgba(255,255,255,.6)", tickBg: "#356668" },
+  { bg: "#efeeea", fg: "#1b1c1a", sub: "#717975", dash: "#c0c8c4", iconBg: "rgba(255,255,255,.6)", tickBg: "#404845" },
+  { bg: "#ffdf96", fg: "#1b1c1a", sub: "#735802", dash: "rgba(115,88,2,.35)", iconBg: "rgba(255,255,255,.6)", tickBg: "#735802" },
+];
+
 function formatDate(d: string | null) {
   if (!d) return "—";
-  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
 }
 
 export default function ProjectsPage() {
@@ -42,15 +60,16 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
 
   // New todo per project
+  const [addingFor, setAddingFor] = useState<string | null>(null);
   const [newTodo, setNewTodo] = useState<Record<string, string>>({});
 
-  // Project date update
   async function updateProjectDate(id: string, field: "last_edition" | "next_edition", value: string) {
     await supabase.from("projects").update({ [field]: value || null }).eq("id", id);
     setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value || null } : p));
   }
 
-  // New task
+  // New free task
+  const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTaskContent, setNewTaskContent] = useState("");
   const [newTaskTag, setNewTaskTag] = useState(TAGS[0]);
   const [filterTag, setFilterTag] = useState<string | null>(null);
@@ -72,12 +91,12 @@ export default function ProjectsPage() {
     setLoading(false);
   }
 
-  // Project todo actions
   async function addTodo(projectId: string) {
     const text = newTodo[projectId]?.trim();
     if (!text) return;
     await supabase.from("project_todos").insert({ project_id: projectId, content: text });
     setNewTodo(prev => ({ ...prev, [projectId]: "" }));
+    setAddingFor(null);
     await loadAll();
   }
 
@@ -89,16 +108,11 @@ export default function ProjectsPage() {
     setTodos(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   }
 
-  async function deleteTodo(id: string) {
-    await supabase.from("project_todos").delete().eq("id", id);
-    setTodos(prev => prev.filter(t => t.id !== id));
-  }
-
-  // Task actions
   async function addTask() {
     if (!newTaskContent.trim()) return;
     await supabase.from("tasks").insert({ content: newTaskContent.trim(), tag: newTaskTag });
     setNewTaskContent("");
+    setShowTaskForm(false);
     await loadAll();
   }
 
@@ -110,21 +124,11 @@ export default function ProjectsPage() {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   }
 
-  const [showDoneTodos, setShowDoneTodos] = useState<Record<string, boolean>>({});
   const [showDoneTasks, setShowDoneTasks] = useState(false);
 
   const filteredTasks = filterTag ? tasks.filter(t => t.tag === filterTag) : tasks;
   const activeTasks = filteredTasks.filter(t => !t.done);
   const doneTasks = filteredTasks.filter(t => t.done);
-
-  const tagColors: Record<string, string> = {
-    "Snooze SAS": "bg-primary text-on-primary",
-    "Admin & finance": "bg-tertiary-container text-on-tertiary-container",
-    "Arpentons": "bg-secondary-container text-on-secondary-container",
-    "La Grange": "bg-surface-container-highest text-on-surface",
-    "LinkedIn": "bg-[#0a66c2]/10 text-[#0a66c2]",
-    "Autres": "bg-outline-variant text-on-surface",
-  };
 
   if (loading) {
     return (
@@ -135,265 +139,270 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar />
-          <h1 className="text-xl font-bold tracking-tight">Projets</h1>
-        </div>
+      <div className="flex items-center gap-3">
+        <Avatar />
+        <h1 className="flex-1 text-[22px] font-bold -tracking-[0.02em] text-on-surface">Tâches</h1>
         <Link
           href="/suggestions"
-          className="text-xs font-semibold text-primary flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary/10"
+          className="rounded-full bg-surface-container text-primary text-[12.5px] font-bold px-[15px] py-2.5"
         >
-          🔍 Importer
+          Importer
         </Link>
       </div>
 
       {/* Projets */}
-      <div className="space-y-4">
-          {projects.map(project => {
+      <div className="mt-5">
+        <p className="text-sm font-bold text-on-surface-variant mb-3">Projets</p>
+        <div className="flex flex-col gap-2.5">
+          {projects.map((project, idx) => {
+            const tint = PROJECT_TINTS[idx % PROJECT_TINTS.length];
             const projectTodos = todos.filter(t => t.project_id === project.id);
+            const activeCount = projectTodos.filter(t => !t.done).length;
             return (
-              <div key={project.id} className="bg-white rounded-2xl p-5 shadow-[0px_10px_30px_rgba(94,139,126,0.08)]">
+              <div key={project.id} className="rounded-[28px] p-5" style={{ background: tint.bg }}>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-lg">
-                    {project.icon}
-                  </div>
-                  <span className="text-lg font-bold">{project.name}</span>
-                </div>
-
-                <div className="space-y-1 mb-4">
-                  <label className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
-                    <span>🕐</span>
-                    <span>Dernière édition :</span>
-                    <input
-                      type="date"
-                      value={project.last_edition || ""}
-                      onChange={(e) => updateProjectDate(project.id, "last_edition", e.target.value)}
-                      className="bg-transparent text-xs font-medium focus:outline-none cursor-pointer"
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-primary font-semibold cursor-pointer">
-                    <span>📅</span>
-                    <span>Prochaine édition :</span>
-                    <input
-                      type="date"
-                      value={project.next_edition || ""}
-                      onChange={(e) => updateProjectDate(project.id, "next_edition", e.target.value)}
-                      className="bg-transparent text-xs font-semibold text-primary focus:outline-none cursor-pointer"
-                    />
-                  </label>
-                </div>
-
-                {projectTodos.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
-                      To-do prochaine édition
-                    </p>
-                    <div className="space-y-1.5">
-                      {projectTodos.filter(t => !t.done).map(todo => (
-                        <div key={todo.id} className="flex items-center gap-2.5 group">
-                          <button
-                            onClick={() => toggleTodo(todo.id, todo.done)}
-                            className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors border-outline-variant"
-                          />
-                          <span className="text-sm flex-1">{todo.content}</span>
-                          <button
-                            onClick={() => deleteTodo(todo.id)}
-                            className="opacity-0 group-hover:opacity-100 text-outline hover:text-error text-xs transition-opacity"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    {projectTodos.some(t => t.done) && (
-                      <div className="mt-2">
-                        <button
-                          onClick={() => setShowDoneTodos(prev => ({ ...prev, [project.id]: !prev[project.id] }))}
-                          className="flex items-center gap-1.5 text-[10px] font-semibold text-outline uppercase tracking-wider"
-                        >
-                          <svg className={`w-3 h-3 transition-transform ${showDoneTodos[project.id] ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                          </svg>
-                          Archive ({projectTodos.filter(t => t.done).length})
-                        </button>
-                        {showDoneTodos[project.id] && (
-                          <div className="space-y-1.5 mt-1.5">
-                            {projectTodos.filter(t => t.done).map(todo => (
-                              <div key={todo.id} className="flex items-center gap-2.5 group">
-                                <button
-                                  onClick={() => toggleTodo(todo.id, todo.done)}
-                                  className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors bg-primary border-primary"
-                                >
-                                  <svg className="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                  </svg>
-                                </button>
-                                <span className="text-sm flex-1 line-through text-outline">{todo.content}</span>
-                                <button
-                                  onClick={() => deleteTodo(todo.id)}
-                                  className="opacity-0 group-hover:opacity-100 text-outline hover:text-error text-xs transition-opacity"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newTodo[project.id] || ""}
-                    onChange={(e) => setNewTodo(prev => ({ ...prev, [project.id]: e.target.value }))}
-                    onKeyDown={(e) => e.key === "Enter" && addTodo(project.id)}
-                    placeholder="Ajouter une tâche..."
-                    className="flex-1 bg-surface border border-outline-variant rounded-xl px-3 py-1.5 text-sm placeholder:text-outline focus:outline-none focus:border-primary"
-                  />
-                  <button
-                    onClick={() => addTodo(project.id)}
-                    className="text-primary text-sm font-semibold px-2"
+                  <span
+                    className="flex-none w-10 h-10 rounded-full flex items-center justify-center text-[19px]"
+                    style={{ background: tint.iconBg }}
                   >
-                    +
-                  </button>
+                    {project.icon}
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-[17px] font-bold -tracking-[0.01em]" style={{ color: tint.fg }}>{project.name}</div>
+                    <label className="inline-block text-[11.5px] mt-0.5" style={{ color: tint.sub }}>
+                      prochaine édition ·{" "}
+                      <input
+                        type="date"
+                        value={project.next_edition || ""}
+                        onChange={(e) => updateProjectDate(project.id, "next_edition", e.target.value)}
+                        className="bg-transparent border-0 p-0 cursor-pointer"
+                        style={{ color: tint.sub, colorScheme: "light" }}
+                      />
+                    </label>
+                  </div>
+                  {activeCount > 0 && (
+                    <span className="text-[11.5px] font-bold flex-none" style={{ color: tint.sub }}>{activeCount} à faire</span>
+                  )}
                 </div>
+
+                <div className="flex flex-col gap-0.5">
+                  {projectTodos.filter(t => !t.done).map(todo => (
+                    <button
+                      key={todo.id}
+                      onClick={() => toggleTodo(todo.id, todo.done)}
+                      className="w-full text-left flex items-center gap-3 py-2.5"
+                    >
+                      <span
+                        className="flex-none w-[22px] h-[22px] rounded-full"
+                        style={{ border: `1.5px solid ${tint.sub}` }}
+                      />
+                      <span className="flex-1 text-[14.5px]" style={{ color: tint.fg }}>{todo.content}</span>
+                    </button>
+                  ))}
+                  {projectTodos.filter(t => t.done).map(todo => (
+                    <button
+                      key={todo.id}
+                      onClick={() => toggleTodo(todo.id, todo.done)}
+                      className="w-full text-left flex items-center gap-3 py-2.5"
+                    >
+                      <span
+                        className="flex-none w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-bold"
+                        style={{ background: tint.tickBg, color: tint.bg }}
+                      >
+                        ✓
+                      </span>
+                      <span className="flex-1 text-[14.5px] line-through opacity-50" style={{ color: tint.fg }}>{todo.content}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {addingFor === project.id ? (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={newTodo[project.id] || ""}
+                      onChange={(e) => setNewTodo(prev => ({ ...prev, [project.id]: e.target.value }))}
+                      onKeyDown={(e) => e.key === "Enter" && addTodo(project.id)}
+                      onBlur={() => !newTodo[project.id] && setAddingFor(null)}
+                      placeholder="Nouvelle tâche..."
+                      className="flex-1 bg-white/20 rounded-xl px-3 py-2 text-sm placeholder:opacity-60 focus:outline-none"
+                      style={{ color: tint.fg }}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setAddingFor(project.id)}
+                    className="w-full mt-2 rounded-full py-[11px] text-[12.5px] font-semibold"
+                    style={{ border: `1.5px dashed ${tint.dash}`, color: tint.sub }}
+                  >
+                    Ajouter une tâche
+                  </button>
+                )}
               </div>
             );
           })}
+        </div>
       </div>
 
-      {/* Tâches */}
-      <div>
-        <h2 className="text-sm font-semibold text-on-surface-variant mb-3">Tâches</h2>
+      {/* Tâches libres */}
+      <div className="mt-[26px]">
+        <div className="flex items-baseline justify-between mb-3">
+          <p className="text-sm font-bold text-on-surface-variant">Tâches libres</p>
+          <p className="text-xs text-outline">{activeTasks.length} en cours</p>
+        </div>
 
-        {/* Add task — compact */}
-        <div className="bg-white rounded-2xl p-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] mb-3 space-y-2">
-          <div className="flex gap-2">
+        <div className="chiprow flex gap-[7px] overflow-x-auto pb-3">
+          <button
+            onClick={() => setFilterTag(null)}
+            className={`flex-none rounded-full px-[13px] py-[9px] text-[11.5px] font-bold ${
+              !filterTag ? "bg-[#1b1c1a] text-[#fbf9f5]" : "bg-surface-container text-on-surface-variant"
+            }`}
+          >
+            Tout
+          </button>
+          {TAGS.map(tag => {
+            const active = filterTag === tag;
+            const style = TAG_STYLE[tag];
+            return (
+              <button
+                key={tag}
+                onClick={() => setFilterTag(active ? null : tag)}
+                className="flex-none rounded-full px-[13px] py-[9px] text-[11.5px] font-bold"
+                style={active ? { background: style.activeBg, color: style.activeText } : { background: "#efeeea", color: "#404845" }}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {activeTasks.map(task => {
+            const style = task.tag ? TAG_STYLE[task.tag] : null;
+            return (
+              <button
+                key={task.id}
+                onClick={() => toggleTask(task.id, task.done)}
+                className="w-full text-left bg-white rounded-[22px] p-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] flex items-center gap-3"
+              >
+                <span className="flex-none w-[22px] h-[22px] rounded-full border-[1.5px] border-[#c0c8c4]" />
+                <span className="flex-1 text-[14.5px] text-on-surface [text-wrap:pretty]">{task.content}</span>
+                {task.tag && (
+                  <span
+                    className="flex-none rounded-full px-2.5 py-1.5 text-[10.5px] font-bold"
+                    style={style ? { background: style.activeBg, color: style.activeText } : { background: "#efeeea", color: "#404845" }}
+                  >
+                    {task.tag}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {activeTasks.length === 0 && (
+            <div className="bg-surface-container rounded-[22px] p-[22px] text-center text-[13.5px] text-outline">
+              Rien sous cette étiquette
+            </div>
+          )}
+        </div>
+
+        {doneTasks.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowDoneTasks(prev => !prev)}
+              className="w-full flex items-center gap-2.5 pt-4 pb-1.5"
+            >
+              <span className="text-[12.5px] font-semibold text-outline">Terminées ({doneTasks.length})</span>
+              <span className="flex-1 h-px bg-surface-container-highest" />
+              <svg className={`w-3 h-3 text-outline transition-transform ${showDoneTasks ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
+            {showDoneTasks && (
+              <div className="flex flex-col gap-2 animate-[rise_.25s_ease-out]">
+                {doneTasks.map(task => (
+                  <div key={task.id} className="bg-surface-container rounded-[20px] px-4 py-3.5 flex items-center gap-3">
+                    <span className="flex-none w-5 h-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">✓</span>
+                    <span className="flex-1 text-[13.5px] text-outline line-through">{task.content}</span>
+                    <button
+                      onClick={() => toggleTask(task.id, task.done)}
+                      className="flex-none text-[11.5px] font-bold text-primary"
+                    >
+                      Rouvrir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="h-24" />
+
+      {/* Task creation form (opened by FAB) */}
+      {showTaskForm && (
+        <div className="fixed inset-x-0 bottom-[98px] z-20 px-[18px]">
+          <div className="max-w-lg mx-auto bg-white rounded-[26px] p-5 shadow-[0_12px_30px_rgba(56,100,88,.2)] space-y-3">
             <input
+              autoFocus
               type="text"
               value={newTaskContent}
               onChange={(e) => setNewTaskContent(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTask()}
               placeholder="Ajouter une tâche..."
-              className="flex-1 bg-surface border border-outline-variant rounded-xl px-3 py-1.5 text-sm placeholder:text-outline focus:outline-none focus:border-primary"
+              className="w-full bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm placeholder:text-outline focus:outline-none focus:border-primary"
             />
+            <div className="flex gap-1.5 flex-wrap">
+              {TAGS.map(tag => {
+                const active = newTaskTag === tag;
+                const style = TAG_STYLE[tag];
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setNewTaskTag(tag)}
+                    className="px-2.5 py-1 rounded-full text-[10px] font-semibold"
+                    style={active ? { background: style.activeBg, color: style.activeText } : { background: "#efeeea", color: "#404845" }}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowTaskForm(false); setNewTaskContent(""); }}
+                className="flex-1 py-2.5 rounded-full text-xs font-semibold text-on-surface-variant bg-surface-container"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={addTask}
+                className="flex-1 bg-primary text-on-primary py-2.5 rounded-full text-xs font-semibold"
+              >
+                Ajouter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FAB */}
+      {!showTaskForm && (
+        <div className="fixed inset-x-0 bottom-[98px] pointer-events-none z-10">
+          <div className="max-w-lg mx-auto relative h-0">
             <button
-              onClick={addTask}
-              className="text-primary text-sm font-semibold px-2"
+              onClick={() => setShowTaskForm(true)}
+              className="pointer-events-auto absolute right-[18px] bottom-0 w-[60px] h-[60px] rounded-full bg-primary text-white text-[26px] font-semibold flex items-center justify-center shadow-[0_12px_30px_rgba(56,100,88,0.34)]"
             >
               +
             </button>
           </div>
-          <div className="flex gap-1.5 flex-wrap">
-            {TAGS.map(tag => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setNewTaskTag(tag)}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
-                  newTaskTag === tag ? tagColors[tag] || "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant"
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
         </div>
-
-        {/* Filter */}
-        <div className="flex gap-1.5 flex-wrap mb-3">
-          <button
-            onClick={() => setFilterTag(null)}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
-              !filterTag ? "bg-on-surface text-surface" : "bg-surface-container text-on-surface-variant"
-            }`}
-          >
-            Tout
-          </button>
-          {TAGS.map(tag => (
-            <button
-              key={tag}
-              onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
-                filterTag === tag ? tagColors[tag] || "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant"
-              }`}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-
-        {/* Task list — active */}
-        <div className="space-y-2">
-          {activeTasks.map(task => (
-            <div
-              key={task.id}
-              className="bg-white rounded-2xl px-4 py-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] flex items-center gap-3"
-            >
-              <button
-                onClick={() => toggleTask(task.id, task.done)}
-                className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors border-outline-variant"
-              />
-              <span className="flex-1 text-sm">{task.content}</span>
-              {task.tag && (
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${tagColors[task.tag] || "bg-surface-container text-on-surface-variant"}`}>
-                  {task.tag}
-                </span>
-              )}
-            </div>
-          ))}
-          {activeTasks.length === 0 && (
-            <p className="text-sm text-outline text-center py-6">Aucune tâche</p>
-          )}
-        </div>
-
-        {/* Archive — done tasks */}
-        {doneTasks.length > 0 && (
-          <div className="mt-4">
-            <button
-              onClick={() => setShowDoneTasks(prev => !prev)}
-              className="flex items-center gap-1.5 text-[10px] font-semibold text-outline uppercase tracking-wider mb-2"
-            >
-              <svg className={`w-3 h-3 transition-transform ${showDoneTasks ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-              Archive ({doneTasks.length})
-            </button>
-            {showDoneTasks && (
-              <div className="space-y-2">
-                {doneTasks.map(task => (
-                  <div
-                    key={task.id}
-                    className="bg-white rounded-2xl px-4 py-3 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] flex items-center gap-3"
-                  >
-                    <button
-                      onClick={() => toggleTask(task.id, task.done)}
-                      className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors bg-primary border-primary"
-                    >
-                      <svg className="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                    </button>
-                    <span className="flex-1 text-sm line-through text-outline">{task.content}</span>
-                    {task.tag && (
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${tagColors[task.tag] || "bg-surface-container text-on-surface-variant"}`}>
-                        {task.tag}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
+      )}
     </div>
   );
 }

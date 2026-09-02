@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import Avatar from "@/components/Avatar";
+import { createClient } from "@/lib/supabase/client";
 
 interface Recap {
   id: string;
@@ -19,10 +20,114 @@ interface RecapQuestion {
   prompt: string;
 }
 
-function formatWeek(start: string, end: string) {
-  const s = new Date(start + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const e = new Date(end + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  return `${s} → ${e}`;
+type Kind = "semaine" | "mois" | "annee";
+
+interface Period {
+  start: string;
+  end: string;
+  label: string;
+  isCurrent: boolean;
+  alreadyGenerated: boolean;
+}
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function toISODate(d: Date) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function mondayOf(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function shortDate(d: Date) {
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+function computePeriods(kind: Kind, recaps: Recap[], today: Date): Period[] {
+  const todayStr = toISODate(today);
+  const exists = (start: string, end: string) => recaps.some(r => r.week_start === start && r.week_end === end);
+
+  if (kind === "semaine") {
+    const thisMonday = mondayOf(today);
+    return Array.from({ length: 4 }, (_, i) => {
+      const start = new Date(thisMonday);
+      start.setDate(start.getDate() - i * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      const startStr = toISODate(start);
+      const endStr = toISODate(end);
+      return {
+        start: startStr,
+        end: endStr,
+        label: `${shortDate(start)} → ${shortDate(end)}`,
+        isCurrent: i === 0,
+        alreadyGenerated: exists(startStr, endStr),
+      };
+    });
+  }
+
+  if (kind === "mois") {
+    return Array.from({ length: 4 }, (_, i) => {
+      const ref = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+      let end = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+      if (i === 0 && end > today) end = new Date(today);
+      const startStr = toISODate(start);
+      const endStr = toISODate(end);
+      return {
+        start: startStr,
+        end: endStr,
+        label: capitalize(ref.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
+        isCurrent: i === 0,
+        alreadyGenerated: exists(startStr, endStr),
+      };
+    });
+  }
+
+  // annee
+  return Array.from({ length: 2 }, (_, i) => {
+    const year = today.getFullYear() - i;
+    const start = new Date(year, 0, 1);
+    let end = new Date(year, 11, 31);
+    if (i === 0 && end > today) end = new Date(today);
+    const startStr = toISODate(start);
+    const endStr = toISODate(end);
+    return {
+      start: startStr,
+      end: endStr,
+      label: String(year),
+      isCurrent: i === 0,
+      alreadyGenerated: exists(startStr, endStr),
+    };
+  });
+}
+
+function inferKind(start: string, end: string): "Semaine" | "Mois" | "Année" {
+  const days = (new Date(end + "T00:00:00").getTime() - new Date(start + "T00:00:00").getTime()) / 86400000 + 1;
+  if (days <= 9) return "Semaine";
+  if (days <= 32) return "Mois";
+  return "Année";
+}
+
+function shortLabel(r: Recap): string {
+  const kind = inferKind(r.week_start, r.week_end);
+  const start = new Date(r.week_start + "T12:00:00");
+  const end = new Date(r.week_end + "T12:00:00");
+  if (kind === "Semaine") return `${shortDate(start)} → ${shortDate(end)}`;
+  if (kind === "Mois") return capitalize(start.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }));
+  return String(start.getFullYear());
 }
 
 function extractQuestions(content: string): string[] {
@@ -32,6 +137,18 @@ function extractQuestions(content: string): string[] {
     .split("\n")
     .map(l => l.replace(/^[-*]\s*/, "").trim())
     .filter(l => l.length > 5);
+}
+
+function extractGlance(content: string): string {
+  const match = content.match(/##\s*📍\s*En un coup d'œil\s*\n([\s\S]*?)(?=\n##|$)/);
+  const text = (match ? match[1] : content).replace(/[#*_>-]/g, " ").replace(/\s+/g, " ").trim();
+  return text.slice(0, 90);
+}
+
+const TINTS = ["#ffdf96", "#b9ecee", "#efeeea"];
+function tintFor(id: string): string {
+  const sum = [...id].reduce((s, c) => s + c.charCodeAt(0), 0);
+  return TINTS[sum % TINTS.length];
 }
 
 function buildPrompt(question: string): string {
@@ -57,16 +174,41 @@ export default function RecapPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openRecap, setOpenRecap] = useState<Recap | null>(null);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [archived, setArchived] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const [kind, setKind] = useState<Kind>("semaine");
+  const [periodIndex, setPeriodIndex] = useState(0);
+  const [entryCount, setEntryCount] = useState<number | null>(null);
+  const [customMode, setCustomMode] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const supabase = createClient();
+  const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
     setArchived(loadArchived());
     load();
   }, []);
+
+  useEffect(() => { setPeriodIndex(0); }, [kind]);
+
+  const periods = useMemo(() => computePeriods(kind, recaps, today), [kind, recaps, today]);
+  const selected = periods[periodIndex] || periods[0];
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    supabase
+      .from("journal_entries")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", selected.start + "T00:00:00")
+      .lte("created_at", selected.end + "T23:59:59")
+      .then(({ count }) => { if (!cancelled) setEntryCount(count ?? 0); });
+    return () => { cancelled = true; };
+  }, [selected?.start, selected?.end]);
 
   async function load() {
     setLoading(true);
@@ -77,8 +219,10 @@ export default function RecapPage() {
   }
 
   async function generate() {
-    if (!dateFrom || !dateTo) {
-      setError("Choisis une date de début et une date de fin");
+    const start = customMode ? dateFrom : selected?.start;
+    const end = customMode ? dateTo : selected?.end;
+    if (!start || !end) {
+      setError("Choisis une période");
       return;
     }
     setGenerating(true);
@@ -87,7 +231,7 @@ export default function RecapPage() {
       const res = await fetch("/api/weekly-recap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekStart: dateFrom, weekEnd: dateTo }),
+        body: JSON.stringify({ weekStart: start, weekEnd: end }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -135,7 +279,7 @@ export default function RecapPage() {
   const allQuestions: RecapQuestion[] = [];
   recaps.forEach(r => {
     const questions = extractQuestions(r.content);
-    const weekLabel = formatWeek(r.week_start, r.week_end);
+    const weekLabel = shortLabel(r);
     questions.forEach(q => {
       allQuestions.push({
         key: `${r.id}::${q}`,
@@ -171,7 +315,7 @@ export default function RecapPage() {
             Retour
           </button>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-on-surface-variant">{formatWeek(openRecap.week_start, openRecap.week_end)}</span>
+            <span className="text-xs text-on-surface-variant">{shortLabel(openRecap)}</span>
             <button
               onClick={() => { if (confirm("Supprimer ce récap ?")) deleteRecap(openRecap.id); }}
               className="text-outline hover:text-error transition-colors"
@@ -192,156 +336,207 @@ export default function RecapPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar />
-          <h1 className="text-xl font-bold tracking-tight">Récap hebdo</h1>
-        </div>
+    <div>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Avatar />
+        <h1 className="text-[22px] font-bold -tracking-[0.02em] text-on-surface">Récaps</h1>
       </div>
 
-      {/* Generate */}
-      <div className="bg-white rounded-2xl p-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-3">
-        <div className="flex gap-2 items-center">
-          <div className="flex-1 space-y-1">
-            <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Du</p>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="w-full bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
-            />
-          </div>
-          <div className="flex-1 space-y-1">
-            <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Au</p>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="w-full bg-surface border border-outline-variant rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
-            />
-          </div>
+      {/* À garder en tête */}
+      <div className="mt-5 bg-primary rounded-[28px] p-[22px] text-[#f4fffa]">
+        <div className="flex items-baseline justify-between mb-[18px]">
+          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[rgba(244,255,250,.75)]">à garder en tête</span>
+          <span className="text-[11.5px] text-[rgba(244,255,250,.75)]">
+            {activeQuestions.length === 0 ? "aucune ouverte" : `${activeQuestions.length} ouverte${activeQuestions.length > 1 ? "s" : ""}`}
+          </span>
         </div>
-        <button
-          onClick={generate}
-          disabled={generating}
-          className="w-full bg-primary text-on-primary py-2.5 rounded-full font-semibold text-sm disabled:opacity-50 transition-opacity"
-        >
-          {generating ? "Génération en cours..." : "📊 Générer"}
-        </button>
-      </div>
-
-      {error && (
-        <div className="bg-error/10 rounded-2xl px-4 py-3 text-xs text-on-surface-variant">
-          {error}
-        </div>
-      )}
-
-      {/* Questions à creuser */}
-      {allQuestions.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-on-surface-variant mb-3">🧭 Questions à creuser</h2>
-          {activeQuestions.length === 0 ? (
-            <p className="text-xs text-outline text-center py-4">Toutes les questions ont été traitées</p>
-          ) : (
-            <div className="space-y-3">
-              {activeQuestions.map(q => (
-                <div key={q.key} className="bg-white rounded-2xl p-4 shadow-[0px_10px_30px_rgba(94,139,126,0.08)] space-y-3">
-                  <div>
-                    <p className="text-[10px] font-semibold text-outline uppercase tracking-wider mb-1">{q.weekLabel}</p>
-                    <p className="text-sm font-medium">{q.question}</p>
-                  </div>
-                  <div className="bg-surface rounded-xl px-3 py-2.5 text-xs text-on-surface-variant leading-relaxed border border-outline-variant">
-                    {q.prompt}
-                  </div>
-                  <div className="flex gap-2">
+        {activeQuestions.length === 0 ? (
+          <p className="text-sm text-[rgba(244,255,250,.75)]">Rien à creuser pour l'instant.</p>
+        ) : (
+          <div className="flex flex-col gap-[18px]">
+            {activeQuestions.map(q => (
+              <div key={q.key} className="flex gap-[14px] items-start">
+                <button
+                  onClick={() => archiveQuestion(q.key)}
+                  className="flex-none w-[26px] h-[26px] mt-0.5 rounded-full border-[1.5px] border-[rgba(244,255,250,.45)] bg-transparent cursor-pointer"
+                />
+                <div className="flex-1">
+                  <p className="text-base leading-[25px] font-medium text-[#f4fffa] [text-wrap:pretty]">{q.question}</p>
+                  <div className="flex items-center gap-3 mt-2.5">
+                    <span className="text-[11px] text-[rgba(244,255,250,.65)]">{q.weekLabel}</span>
                     <button
                       onClick={() => copyPrompt(q.key, q.prompt)}
-                      className="flex-1 bg-primary text-on-primary py-2 rounded-full text-xs font-semibold transition-opacity"
+                      className="rounded-full bg-[rgba(244,255,250,.16)] text-[#f4fffa] text-[11.5px] font-bold px-3.5 py-2"
                     >
-                      {copiedKey === q.key ? "✓ Copié" : "Copier le prompt"}
-                    </button>
-                    <button
-                      onClick={() => archiveQuestion(q.key)}
-                      className="px-4 py-2 rounded-full text-xs font-semibold text-on-surface-variant bg-surface-container"
-                    >
-                      Traité
+                      {copiedKey === q.key ? "✓ Copié" : "Écrire là-dessus"}
                     </button>
                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {archivedQuestions.length > 0 && (
+        <>
+          <button
+            onClick={() => setShowArchived(v => !v)}
+            className="w-full flex items-center gap-2.5 pt-3.5 pb-2 px-1"
+          >
+            <span className="text-[12.5px] font-semibold text-outline">Traitées ({archivedQuestions.length})</span>
+            <span className="flex-1 h-px bg-surface-container-highest" />
+            <svg className={`w-3 h-3 text-outline transition-transform ${showArchived ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+          {showArchived && (
+            <div className="flex flex-col gap-2 animate-[rise_.25s_ease-out]">
+              {archivedQuestions.map(q => (
+                <div key={q.key} className="bg-surface-container rounded-[20px] px-4 py-3.5 flex gap-3 items-start">
+                  <div className="flex-1">
+                    <p className="text-[13.5px] leading-5 text-on-surface-variant line-through [text-wrap:pretty]">{q.question}</p>
+                    <p className="text-[11px] text-outline mt-1.5">{q.weekLabel}</p>
+                  </div>
+                  <button
+                    onClick={() => unarchiveQuestion(q.key)}
+                    className="flex-none text-[11.5px] font-bold text-primary"
+                  >
+                    Rouvrir
+                  </button>
                 </div>
               ))}
             </div>
           )}
+        </>
+      )}
 
-          {archivedQuestions.length > 0 && (
-            <div className="mt-4">
-              <button
-                onClick={() => setShowArchived(v => !v)}
-                className="flex items-center gap-1.5 text-[10px] font-semibold text-outline uppercase tracking-wider mb-2"
-              >
-                <svg className={`w-3 h-3 transition-transform ${showArchived ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
-                Traitées ({archivedQuestions.length})
-              </button>
-              {showArchived && (
-                <div className="space-y-2">
-                  {archivedQuestions.map(q => (
-                    <div key={q.key} className="bg-surface-container-low rounded-2xl px-4 py-3 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] text-outline mb-0.5">{q.weekLabel}</p>
-                        <p className="text-xs text-on-surface-variant line-through">{q.question}</p>
-                      </div>
-                      <button
-                        onClick={() => unarchiveQuestion(q.key)}
-                        className="text-[10px] font-semibold text-outline hover:text-on-surface flex-shrink-0 pt-0.5"
-                      >
-                        Rouvrir
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+      {/* Générateur */}
+      <div className="mt-[22px] bg-[#ffdf96] rounded-[28px] p-5">
+        <p className="text-[11px] font-bold tracking-[0.08em] uppercase text-[#735802] mb-3.5">nouvelle synthèse</p>
+
+        {!customMode ? (
+          <>
+            <div className="bg-[rgba(255,251,255,.6)] rounded-full p-1 flex gap-1 mb-3.5">
+              {(["semaine", "mois", "annee"] as Kind[]).map(k => (
+                <button
+                  key={k}
+                  onClick={() => setKind(k)}
+                  className={`flex-1 rounded-full py-2.5 text-[12.5px] font-bold capitalize ${
+                    kind === k ? "bg-[#1b1c1a] text-[#fffbff]" : "bg-transparent text-[#735802]"
+                  }`}
+                >
+                  {k}
+                </button>
+              ))}
             </div>
-          )}
+
+            <div className="chiprow flex gap-2 overflow-x-auto pb-1">
+              {periods.map((p, i) => (
+                <button
+                  key={p.start}
+                  onClick={() => setPeriodIndex(i)}
+                  className={`flex-none rounded-full px-3.5 py-2.5 text-[12.5px] font-semibold ${
+                    periodIndex === i ? "bg-[#1b1c1a] text-[#fffbff]" : "bg-[rgba(255,251,255,.6)] text-[#735802]"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-baseline gap-2 py-3.5 px-0.5">
+              <span className="text-[12.5px] font-bold text-on-surface">
+                {selected ? `${shortDate(new Date(selected.start + "T12:00:00"))} – ${shortDate(new Date(selected.end + "T12:00:00"))}` : ""}
+                {selected?.isCurrent ? " · en cours" : selected?.alreadyGenerated ? " · déjà généré" : " · jamais généré"}
+              </span>
+              <span className="flex-1" />
+              <span className="text-[11.5px] text-[#735802]">
+                {entryCount === null ? "…" : `${entryCount} entrée${entryCount === 1 ? "" : "s"}`}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setCustomMode(true)}
+              className="text-[12.5px] text-[#735802]/80 mb-3.5 underline underline-offset-2"
+            >
+              Autre période…
+            </button>
+          </>
+        ) : (
+          <div className="mb-3.5 space-y-3">
+            <div className="flex gap-2 items-center">
+              <div className="flex-1 space-y-1">
+                <p className="text-[10px] font-semibold text-[#735802] uppercase tracking-wider">Du</p>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="w-full bg-[rgba(255,251,255,.6)] border-0 rounded-xl px-3 py-2 text-sm focus:outline-none"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <p className="text-[10px] font-semibold text-[#735802] uppercase tracking-wider">Au</p>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="w-full bg-[rgba(255,251,255,.6)] border-0 rounded-xl px-3 py-2 text-sm focus:outline-none"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => setCustomMode(false)}
+              className="text-[12.5px] text-[#735802]/80 underline underline-offset-2"
+            >
+              Revenir aux périodes calendaires
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={generate}
+          disabled={generating}
+          className="w-full bg-[#1b1c1a] text-[#fbf9f5] rounded-full py-[15px] text-[14.5px] font-semibold disabled:opacity-50 transition-opacity"
+        >
+          {generating ? "Génération en cours..." : selected?.alreadyGenerated && !customMode ? "Régénérer" : "Générer le récap"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-3 bg-error/10 rounded-2xl px-4 py-3 text-xs text-on-surface-variant">
+          {error}
         </div>
       )}
 
       {/* Historique */}
-      {recaps.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-4xl mb-3">📊</p>
-          <p className="text-sm text-on-surface-variant">Aucun récap pour l'instant</p>
-        </div>
-      ) : (
-        <div>
-          <h2 className="text-sm font-semibold text-on-surface-variant mb-3">Historique</h2>
-          <div className="space-y-2">
-            {recaps.map((r) => (
-              <div key={r.id} className="bg-surface-container-low rounded-2xl px-4 py-3 flex items-center gap-3">
-                <button
-                  onClick={() => setOpenRecap(r)}
-                  className="flex items-center gap-3 flex-1 text-left"
-                >
-                  <span className="text-lg">📊</span>
-                  <p className="text-sm font-medium flex-1">{formatWeek(r.week_start, r.week_end)}</p>
-                  <svg className="w-4 h-4 text-outline flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => { if (confirm("Supprimer ce récap ?")) deleteRecap(r.id); }}
-                  className="text-outline hover:text-error transition-colors flex-shrink-0"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                  </svg>
-                </button>
-              </div>
+      <div className="mt-[26px]">
+        <p className="text-sm font-bold text-on-surface-variant mb-3">Déjà synthétisé</p>
+        {recaps.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">📊</p>
+            <p className="text-sm text-on-surface-variant">Aucun récap pour l'instant</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2.5">
+            {recaps.map(r => (
+              <button
+                key={r.id}
+                onClick={() => setOpenRecap(r)}
+                className="text-left rounded-[24px] p-4 flex flex-col min-h-[118px]"
+                style={{ background: tintFor(r.id) }}
+              >
+                <span className="text-[10.5px] font-bold tracking-[0.06em] uppercase text-outline">{inferKind(r.week_start, r.week_end)}</span>
+                <span className="text-[15px] font-bold -tracking-[0.01em] text-on-surface leading-[21px] mt-1.5">{shortLabel(r)}</span>
+                <span className="text-[11.5px] leading-[17px] text-on-surface-variant mt-auto">{extractGlance(r.content)}</span>
+              </button>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      <div className="h-8" />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "@/components/Avatar";
 
@@ -141,6 +142,12 @@ export default function ProjectsPage() {
           <Avatar />
           <h1 className="text-xl font-bold tracking-tight">Projets</h1>
         </div>
+        <Link
+          href="/suggestions"
+          className="text-xs font-semibold text-primary flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary/10"
+        >
+          🔍 Importer
+        </Link>
       </div>
 
       {/* Projets */}

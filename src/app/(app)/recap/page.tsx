@@ -16,6 +16,7 @@ interface Recap {
 interface RecapQuestion {
   key: string; // `${recapId}::${questionText}`
   question: string;
+  theme: string;
   weekLabel: string;
   prompt: string;
 }
@@ -130,13 +131,28 @@ function shortLabel(r: Recap): string {
   return String(start.getFullYear());
 }
 
-function extractQuestions(content: string): string[] {
+function extractQuestions(content: string): { theme: string; question: string }[] {
   const match = content.match(/##\s*🧭\s*Questions à creuser\s*\n([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   return match[1]
     .split("\n")
     .map(l => l.replace(/^[-*]\s*/, "").trim())
-    .filter(l => l.length > 5);
+    .filter(l => l.length > 5)
+    .map(l => {
+      const m = l.match(/^\*\*(.+?)\*\*\s*[—–-]\s*(.+)$/);
+      return m ? { theme: m[1].trim(), question: m[2].trim() } : { theme: "Sans thème", question: l };
+    });
+}
+
+const THEME_TINTS = [
+  { bg: "#386458", fg: "#f4fffa", sub: "rgba(244,255,250,.65)", check: "rgba(244,255,250,.45)", btn: "rgba(244,255,250,.16)" },
+  { bg: "#b9ecee", fg: "#1b1c1a", sub: "#3c6c6e", check: "#8fc9cb", btn: "rgba(255,255,255,.6)" },
+  { bg: "#ffdf96", fg: "#1b1c1a", sub: "#735802", check: "#d9b25e", btn: "rgba(255,251,255,.6)" },
+  { bg: "#efeeea", fg: "#1b1c1a", sub: "#717975", check: "#c0c8c4", btn: "#ffffff" },
+];
+
+function tintOf(theme: string) {
+  return THEME_TINTS[[...theme].reduce((n, c) => n + c.charCodeAt(0), 0) % THEME_TINTS.length];
 }
 
 function extractGlance(content: string): string {
@@ -280,18 +296,28 @@ export default function RecapPage() {
   recaps.forEach(r => {
     const questions = extractQuestions(r.content);
     const weekLabel = shortLabel(r);
-    questions.forEach(q => {
+    questions.forEach(({ theme, question }) => {
       allQuestions.push({
-        key: `${r.id}::${q}`,
-        question: q,
+        key: `${r.id}::${question}`,
+        question,
+        theme,
         weekLabel,
-        prompt: buildPrompt(q),
+        prompt: buildPrompt(question),
       });
     });
   });
 
   const activeQuestions = allQuestions.filter(q => !archived.has(q.key));
   const archivedQuestions = allQuestions.filter(q => archived.has(q.key));
+
+  const byTheme = new Map<string, RecapQuestion[]>();
+  activeQuestions.forEach(q => {
+    byTheme.set(q.theme, [...(byTheme.get(q.theme) || []), q]);
+  });
+  const groups = [...byTheme.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .sort((a, b) => (a[0] === "Sans thème" ? 1 : 0) - (b[0] === "Sans thème" ? 1 : 0))
+    .map(([theme, items]) => ({ theme, items, tint: tintOf(theme) }));
 
   if (loading) {
     return (
@@ -343,35 +369,54 @@ export default function RecapPage() {
         <h1 className="text-[22px] font-bold -tracking-[0.02em] text-on-surface">Récaps</h1>
       </div>
 
-      {/* À garder en tête */}
-      <div className="mt-5 bg-primary rounded-[28px] p-[22px] text-[#f4fffa]">
-        <div className="flex items-baseline justify-between mb-[18px]">
-          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[rgba(244,255,250,.75)]">à garder en tête</span>
-          <span className="text-[11.5px] text-[rgba(244,255,250,.75)]">
-            {activeQuestions.length === 0 ? "aucune ouverte" : `${activeQuestions.length} ouverte${activeQuestions.length > 1 ? "s" : ""}`}
+      {/* À garder en tête, groupé par thème */}
+      <div className="mt-5">
+        <div className="flex items-baseline justify-between mx-1 mb-3.5">
+          <h2 className="text-sm font-bold text-on-surface-variant">À garder en tête</h2>
+          <span className="text-xs text-outline">
+            {activeQuestions.length === 0 ? "aucune ouverte" : `${activeQuestions.length} ${activeQuestions.length > 1 ? "ouvertes" : "ouverte"}`}
           </span>
         </div>
+
         {activeQuestions.length === 0 ? (
-          <p className="text-sm text-[rgba(244,255,250,.75)]">Rien à creuser pour l'instant.</p>
+          <div className="bg-surface-container rounded-[26px] p-5 text-sm text-on-surface-variant">
+            Rien à creuser pour l'instant.
+          </div>
         ) : (
-          <div className="flex flex-col gap-[18px]">
-            {activeQuestions.map(q => (
-              <div key={q.key} className="flex gap-[14px] items-start">
-                <button
-                  onClick={() => archiveQuestion(q.key)}
-                  className="flex-none w-[26px] h-[26px] mt-0.5 rounded-full border-[1.5px] border-[rgba(244,255,250,.45)] bg-transparent cursor-pointer"
-                />
-                <div className="flex-1">
-                  <p className="text-base leading-[25px] font-medium text-[#f4fffa] [text-wrap:pretty]">{q.question}</p>
-                  <div className="flex items-center gap-3 mt-2.5">
-                    <span className="text-[11px] text-[rgba(244,255,250,.65)]">{q.weekLabel}</span>
-                    <button
-                      onClick={() => copyPrompt(q.key, q.prompt)}
-                      className="rounded-full bg-[rgba(244,255,250,.16)] text-[#f4fffa] text-[11.5px] font-bold px-3.5 py-2"
-                    >
-                      {copiedKey === q.key ? "✓ Copié" : "Écrire là-dessus"}
-                    </button>
-                  </div>
+          <div className="flex flex-col gap-2.5">
+            {groups.map(({ theme, items, tint }) => (
+              <div key={theme} className="rounded-[26px] p-5" style={{ background: tint.bg }}>
+                <div className="flex items-baseline gap-2 mb-4">
+                  <span className="text-[13px] font-bold tracking-[-0.01em]" style={{ color: tint.fg }}>{theme}</span>
+                  <span className="text-[11px]" style={{ color: tint.sub }}>{items.length}</span>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  {items.map(q => (
+                    <div key={q.key} className="flex gap-[13px] items-start">
+                      <button
+                        onClick={() => archiveQuestion(q.key)}
+                        aria-label="Marquer comme traitée"
+                        className="flex-none w-6 h-6 mt-0.5 rounded-full border-[1.5px] bg-transparent"
+                        style={{ borderColor: tint.check }}
+                      />
+                      <div className="flex-1">
+                        <p className="text-[15px] leading-[23px] font-medium [text-wrap:pretty]" style={{ color: tint.fg }}>
+                          {q.question}
+                        </p>
+                        <div className="flex items-center gap-2.5 mt-[9px]">
+                          <span className="text-[10.5px]" style={{ color: tint.sub }}>{q.weekLabel}</span>
+                          <button
+                            onClick={() => copyPrompt(q.key, q.prompt)}
+                            className="rounded-full px-[13px] py-[7px] text-[11px] font-bold"
+                            style={{ background: tint.btn, color: tint.fg }}
+                          >
+                            {copiedKey === q.key ? "✓ Copié" : "Écrire là-dessus"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}

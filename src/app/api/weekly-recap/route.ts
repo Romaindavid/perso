@@ -40,6 +40,8 @@ Si rien ne se confirme sur plusieurs semaines, dis-le franchement et ne force pa
 2-3 questions maximum. Psychologiques et introspectives, jamais descriptives — pas de question dont la réponse est déjà dans les données.
 Doivent pointer un angle mort réel ou une tension repérée dans les données de la semaine ou en comparaison avec l'historique — pas une reformulation d'un fait déjà énoncé plus haut.
 Ce sont des amorces de réflexion, pas un récapitulatif déguisé.
+Format de chaque question : "- **Thème** — question"
+Le thème doit être repris mot pour mot dans la liste des thèmes de la section Schémas détectés / Journal & état d'esprit ci-dessus. Un seul thème par question.
 
 Réponds uniquement avec ce markdown, rien avant ni après.
 

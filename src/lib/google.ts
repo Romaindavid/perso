@@ -41,6 +41,21 @@ export async function getGoogleAccessToken(userId: string): Promise<string | nul
   return tokens.access_token;
 }
 
+// Only calendars the user owns — excludes read-only subscriptions (shared
+// room bookings, association calendars, etc.) that add noise but no signal
+// about the user's own day.
+async function listOwnedCalendars(accessToken: string): Promise<{ id: string; summary: string }[]> {
+  const calRes = await fetch(
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!calRes.ok) return [{ id: "primary", summary: "primary" }];
+  const items = (await calRes.json()).items || [];
+  return items
+    .filter((c: any) => c.accessRole === "owner")
+    .map((c: any) => ({ id: c.id, summary: c.summary }));
+}
+
 export async function fetchCalendarEvents(accessToken: string, daysAhead: number): Promise<{ events: any[]; debug: { calendars: string[]; timeMin: string; timeMax: string } }> {
   const now = new Date();
   const start = new Date(now);
@@ -52,14 +67,7 @@ export async function fetchCalendarEvents(accessToken: string, daysAhead: number
   const timeMin = start.toISOString();
   const timeMax = end.toISOString();
 
-  // List all calendars
-  const calRes = await fetch(
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  const calendars: { id: string; summary: string }[] = calRes.ok
-    ? ((await calRes.json()).items || []).map((c: any) => ({ id: c.id, summary: c.summary }))
-    : [{ id: "primary", summary: "primary" }];
+  const calendars = await listOwnedCalendars(accessToken);
 
   const allEvents: any[] = [];
   for (const cal of calendars) {
@@ -85,13 +93,7 @@ export async function fetchCalendarEvents(accessToken: string, daysAhead: number
 }
 
 export async function fetchCalendarEventsInRange(accessToken: string, timeMin: string, timeMax: string): Promise<any[]> {
-  const calRes = await fetch(
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  const calendars: { id: string; summary: string }[] = calRes.ok
-    ? ((await calRes.json()).items || []).map((c: any) => ({ id: c.id, summary: c.summary }))
-    : [{ id: "primary", summary: "primary" }];
+  const calendars = await listOwnedCalendars(accessToken);
 
   const allEvents: any[] = [];
   for (const cal of calendars) {

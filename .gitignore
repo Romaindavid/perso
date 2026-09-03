@@ -7,3 +7,8 @@ scripts/import-medical.ts
 next-env.d.ts
 .gstack/
 .DS_Store
+.vercel
+.env*
+weekly_recaps_rows.sql
+weekly_recaps_theme_backfill.sql
+scripts/gen-theme-backfill.mjs

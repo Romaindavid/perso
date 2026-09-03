@@ -1,51 +1,79 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateWithContext } from "@/lib/claude";
+import { getGoogleAccessToken, fetchCalendarEventsInRange } from "@/lib/google";
 
-const SYSTEM_PROMPT = `Tu es un assistant qui rédige un récap hebdomadaire personnel à partir de données de santé, journal et tâches.
+const SYSTEM_PROMPT = `# Rôle
 
-Objectif double :
-- Clarté : résumé factuel, lisible en 2-3 minutes MAXIMUM pour l'ensemble du document — vise plus court que ce que tu penses suffisant
-- Insight : faire émerger des associations entre les sources (sommeil ↔ humeur, charge sportive ↔ énergie, tâches accomplies ↔ satisfaction) — pas un dashboard de chiffres bruts
+Tu es un assistant de relecture de journal intime. Ton rôle est d'aider Romain à repérer ce qu'il n'a pas le temps de voir en écrivant  au jour le jour : des répétitions, des tensions, des angles morts.
 
+Tes questions peuvent avoir la même profondeur que celles qu'un thérapeute ou un coach poserait — à la
+différence près qu'elles n'interprètent jamais et ne suggèrent aucune lecture de la situation. Tu poses des questions, tu n'apportes pas de réponses. Tu ne moralises jamais sur les choix de la personne.
 Ton : direct, factuel et honnête. Pas de coaching artificiel, pas de ton motivationnel creux, pas de jugement de performance.
 
-Forme :
-- Un seul emoji discret en préfixe de chaque titre de section, aucun emoji dans le corps du texte
-- Phrases courtes, listes à puces plutôt que paragraphes denses
-- N'utilise JAMAIS de tableaux markdown (illisibles sur mobile)
-- Pas de reconstitution jour par jour — synthétise
+# Données fournies
 
-Structure markdown stricte, avec ces sections exactes :
+Pour chaque jour de la période, tu reçois deux types de données :
 
-## 📍 En un coup d'œil
-3-4 lignes, résumé ultra-condensé.
+1. **Entrée de journal** — le texte écrit par la personne (peut être absent certains jours)
+2. **Données structurées du jour** :
+   - Sommeil (durée, qualité si disponible)
+   - Activités sportives (type, durée/intensité)
+   - Tâches complétées (liste ou nombre)
+   - Événements d'agenda (nature, densité de la journée)
+Historique des weekly_recaps des semaines précédentes (contexte).
 
-## 💪 Activité physique & corps
-Chiffres clés uniquement (sommeil moyen, FC, charge sportive, poids si pesée) — pas de détail jour par jour, c'est déjà dans Garmin.
-Indique en première ligne : "Renforcement musculaire : X/7 jours" (donnée fournie dans le contexte, ne pas recalculer).
+Si certains jours de la période n'ont pas d'entrée, ne le signale que si c'est pertinent pour comprendre le récap (ex. une rupture nette dans la régularité d'écriture) — sinon ignore-le silencieusement.
 
-## 📓 Journal & état d'esprit
-Tonalité dominante + 1-2 faits marquants. Pas de reconstitution jour par jour.
+## Comment utiliser les données structurées
 
-## ✅ Productivité perso
-Tâches faites / loupées, en bref.
+Les données structurées ne sont PAS la matière première du récap — elles
+servent à éclairer et compléter le journal, jamais à le remplacer.
+- Si un jour n'a pas d'entrée de journal, tu peux mentionner ce qui s'est passé factuellement d'après les données structurées (ex. "peu de sommeil  le 28, agenda chargé"), mais sans interpréter ce que la personne en a  ressenti — tu ne le sais pas si elle ne l'a pas écrit.
+- Les données structurées peuvent nourrir un schéma détecté (ex. lien observé entre sommeil et ton des entrées) mais suivent exactement les mêmes règles que les schémas textuels : seulement si confirmé sur plusieurs semaines, jamais formulé en causalité, jamais mentionné s'il n'est vu que sur la période courante.
+- Ne cite jamais un chiffre brut (durée de sommeil, nombre de tâches)  dans les sections Meilleurs moments ou Questions à creuser — ces sections restent centrées sur le vécu exprimé, pas sur la donnée. Les chiffres peuvent apparaître dans Résumé de la période et Schémas  détectés, à titre de contexte factuel.
 
-## 🔍 Schémas détectés
-Maximum 2-3 observations, et UNIQUEMENT celles qui se confirment ou s'infirment à la lumière de l'historique des semaines précédentes fourni en contexte — une corrélation vue sur 7 jours seuls n'est pas un schéma, c'est une anecdote, ne la mentionne pas ici.
-Formule-les explicitement comme des associations observées, jamais comme des liens de causalité (ex: "X et Y coïncident cette semaine et la semaine du..." plutôt que "X cause Y").
-Si rien ne se confirme sur plusieurs semaines, dis-le franchement et ne force pas une observation.
+# Structure de sortie attendue
 
-## 🧭 Questions à creuser
-2-3 questions maximum. Psychologiques et introspectives, jamais descriptives — pas de question dont la réponse est déjà dans les données.
-Doivent pointer un angle mort réel ou une tension repérée dans les données de la semaine ou en comparaison avec l'historique — pas une reformulation d'un fait déjà énoncé plus haut.
+## 📅 Résumé de la période
+3 à 5 phrases factuelles et chronologiques. Ce qui s'est passé, pas ce que ça signifie. Tu peux t'appuyer sur les données structurées pour compléter les jours peu ou pas écrits, mais le journal reste la source prioritaire dès qu'il existe — en cas de tension entre ce que dit le journal et ce que montrent les données (ex. "journée horrible" un jour où l'agenda était vide), ne tranche pas, mentionne les deux sans les réconcilier.
+
+## ✨ Meilleurs moments de la période
+1 à 3 moments identifiés comme positifs par la personne elle-même dans ses entrées (explicitement ou par le ton employé) — pas une déduction de ta part sur ce qui "devrait" être positif. Si rien ne ressort clairement,
+dis-le plutôt que d'en inventer un.
+
+## 🧭 Schémas détectés
+Maximum 2-3 observations, et UNIQUEMENT celles qui se confirment ou
+s'infirment à la lumière de l'historique des semaines précédentes fourni
+en contexte — une corrélation vue sur 7 jours seuls n'est pas un schéma,
+c'est une anecdote, ne la mentionne pas ici.
+Formule-les explicitement comme des associations observées, jamais comme
+des liens de causalité (ex. "X et Y coïncident cette semaine et la
+semaine du..." plutôt que "X cause Y").
+Si rien ne se confirme sur plusieurs semaines, dis-le franchement et ne
+force pas une observation.
+
+## ❓ Questions à creuser
+2-3 questions maximum. Psychologiques et introspectives, jamais
+descriptives — pas de question dont la réponse est déjà dans les données.
+Doivent pointer un angle mort réel ou une tension repérée dans les
+données de la semaine ou en comparaison avec l'historique — pas une
+reformulation d'un fait déjà énoncé plus haut.
 Ce sont des amorces de réflexion, pas un récapitulatif déguisé.
 Format de chaque question : "- **Thème** — question"
-Le thème doit être repris mot pour mot dans la liste des thèmes de la section Schémas détectés / Journal & état d'esprit ci-dessus. Un seul thème par question.
+Le thème doit être repris mot pour mot dans la liste des thèmes de la
+section Résumé de la période / Schémas détectés ci-dessus. Un seul
+thème par question.
 
-Réponds uniquement avec ce markdown, rien avant ni après.
+# Garde-fous
+- Jamais de vocabulaire clinique ou diagnostique (anxiété, dépression,
+  burn-out, etc.), sauf si la personne l'emploie elle-même dans ses
+  propres mots — dans ce cas tu peux le reprendre, pas l'introduire.
+- Pas de note d'humeur ou de score inventé si le journal n'en contient
+  pas déjà.
+- Respecte strictement les titres et l'ordre des sections ci-dessus. Réponds uniquement avec ce markdown, rien avant ni après.
 
-Après le markdown, ajoute un séparateur "---SUMMARY---" suivi d'un résumé compact de 5 à 10 lignes en texte brut (pas de markdown) de cette semaine : moyennes clés (sommeil, charge sportive, poids si dispo), tonalité dominante du journal, taux de réussite renforcement musculaire (X/7). Ce résumé sert de mémoire pour les semaines futures, sois dense et factuel.`;
+Après le markdown, ajoute un séparateur "---SUMMARY---" suivi d'un résumé compact de 5 à 10 lignes en texte brut (pas de markdown) de cette période : ce qui s'est passé, tonalité dominante du journal, meilleurs moments, schémas observés. Ce résumé sert de mémoire pour les périodes futures, sois dense et factuel.`;
 
 function mondayOf(date: Date): Date {
   const d = new Date(date);
@@ -56,12 +84,84 @@ function mondayOf(date: Date): Date {
   return d;
 }
 
+function dateRange(startStr: string, endStr: string): string[] {
+  const out: string[] = [];
+  const d = new Date(startStr + "T00:00:00");
+  const end = new Date(endStr + "T00:00:00");
+  while (d <= end) {
+    out.push(d.toISOString().split("T")[0]);
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 interface Activity {
   date: string;
   type: string;
   duration_minutes: number;
   intensity: string | null;
-  calories: number;
+}
+
+interface Sleep {
+  date: string;
+  duration_hours: number;
+  quality: string | null;
+}
+
+interface JournalEntry {
+  created_at: string;
+  content: string;
+  mood: string | null;
+}
+
+interface CompletedTask {
+  completed_at: string;
+  content: string;
+}
+
+interface CalendarEvent {
+  summary: string;
+  start: string;
+}
+
+function buildDayBlock(
+  date: string,
+  journal: JournalEntry[],
+  sleep: Sleep | undefined,
+  activities: Activity[],
+  tasks: CompletedTask[],
+  events: CalendarEvent[] | null
+): string {
+  const label = capitalize(new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "2-digit" }));
+  const lines: string[] = [`### ${label}`];
+
+  if (journal.length) {
+    journal.forEach(j => {
+      const time = new Date(j.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      lines.push(`Journal (${time}${j.mood ? `, humeur : ${j.mood}` : ""}) : "${j.content}"`);
+    });
+  }
+  if (sleep) {
+    const h = Math.floor(sleep.duration_hours);
+    const m = Math.round((sleep.duration_hours % 1) * 60);
+    lines.push(`Sommeil : ${h}h${String(m).padStart(2, "0")}${sleep.quality ? `, qualité ${sleep.quality.toLowerCase()}` : ""}`);
+  }
+  if (activities.length) {
+    lines.push(`Sport : ${activities.map(a => `${a.type.replace(/_/g, " ")} ${a.duration_minutes} min${a.intensity ? ` (${a.intensity})` : ""}`).join(", ")}`);
+  }
+  if (tasks.length) {
+    lines.push(`Tâches complétées (${tasks.length}) : ${tasks.map(t => t.content).join(", ")}`);
+  }
+  if (events && events.length) {
+    lines.push(`Agenda (${events.length} événement${events.length > 1 ? "s" : ""}) : ${events.map(e => e.summary).join(", ")}`);
+  }
+
+  if (lines.length === 1) lines.push("(rien)");
+  return lines.join("\n");
 }
 
 export async function POST(request: Request) {
@@ -82,56 +182,85 @@ export async function POST(request: Request) {
   const [
     { data: activities },
     { data: sleep },
-    { data: metrics },
     { data: journalEntries },
     { data: completedTodos },
     { data: completedTasks },
     { data: pastRecaps },
   ] = await Promise.all([
-    supabase.from("garmin_activities").select("*").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
-    supabase.from("garmin_sleep").select("*").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
-    supabase.from("garmin_metrics").select("*").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
-    supabase.from("journal_entries").select("*").gte("created_at", weekStart.toISOString()).lte("created_at", nowIso).order("created_at"),
-    supabase.from("project_todos").select("*, projects(name)").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
-    supabase.from("tasks").select("*").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
+    supabase.from("garmin_activities").select("date, type, duration_minutes, intensity").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
+    supabase.from("garmin_sleep").select("date, duration_hours, quality").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
+    supabase.from("journal_entries").select("created_at, content, mood").gte("created_at", weekStart.toISOString()).lte("created_at", nowIso).order("created_at"),
+    supabase.from("project_todos").select("content, completed_at").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
+    supabase.from("tasks").select("content, completed_at").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
     supabase.from("weekly_recaps").select("week_start, compact_summary").order("week_start", { ascending: false }).limit(8),
   ]);
 
-  const allActivities: Activity[] = activities || [];
-  const isRoutine = (a: Activity) => a.type === "strength_training" && a.duration_minutes < 10;
-  const isMuscu = (a: Activity) => a.type === "strength_training" && a.duration_minutes >= 10;
-  const cardioActivities = allActivities.filter(a => a.type !== "strength_training");
-  const muscuActivities = allActivities.filter(isMuscu);
-  const routineDays = new Set(allActivities.filter(isRoutine).map(a => a.date));
+  // Calendar events are optional — skip silently if Google isn't connected or the API fails.
+  let eventsByDate: Map<string, CalendarEvent[]> | null = null;
+  try {
+    const accessToken = await getGoogleAccessToken(user.id);
+    if (accessToken) {
+      const events = await fetchCalendarEventsInRange(accessToken, weekStart.toISOString(), nowIso);
+      eventsByDate = new Map();
+      events.forEach((e: CalendarEvent) => {
+        const d = e.start.slice(0, 10);
+        eventsByDate!.set(d, [...(eventsByDate!.get(d) || []), e]);
+      });
+    }
+  } catch { /* calendar optional, ignore failures */ }
 
-  const parts: string[] = [];
+  const journalByDate = new Map<string, JournalEntry[]>();
+  (journalEntries || []).forEach((j: JournalEntry) => {
+    const d = j.created_at.split("T")[0];
+    journalByDate.set(d, [...(journalByDate.get(d) || []), j]);
+  });
 
-  parts.push(`## Renforcement musculaire (routine quotidienne)\nJours réussis : ${routineDays.size}/7\nJours : ${[...routineDays].sort().join(", ") || "aucun"}`);
+  const sleepByDate = new Map((sleep || []).map((s: Sleep) => [s.date, s]));
 
-  if (cardioActivities.length) parts.push(`## Activités cardio\n${JSON.stringify(cardioActivities, null, 2)}`);
-  if (muscuActivities.length) parts.push(`## Séances de musculation (≥10 min)\n${JSON.stringify(muscuActivities, null, 2)}`);
-  if (sleep?.length) parts.push(`## Sommeil\n${JSON.stringify(sleep, null, 2)}`);
-  if (metrics?.length) parts.push(`## Métriques (poids, FC, HRV)\n${JSON.stringify(metrics, null, 2)}`);
-  if (journalEntries?.length) parts.push(`## Entrées journal\n${JSON.stringify(journalEntries, null, 2)}`);
+  const activitiesByDate = new Map<string, Activity[]>();
+  (activities || []).forEach((a: Activity) => {
+    activitiesByDate.set(a.date, [...(activitiesByDate.get(a.date) || []), a]);
+  });
 
-  const tasksDone = [
-    ...(completedTodos || []).map((t: any) => ({ content: t.content, project: t.projects?.name })),
-    ...(completedTasks || []).map((t: any) => ({ content: t.content, tag: t.tag })),
-  ];
-  if (tasksDone.length) parts.push(`## Tâches complétées\n${JSON.stringify(tasksDone, null, 2)}`);
+  const tasksByDate = new Map<string, CompletedTask[]>();
+  [...(completedTodos || []), ...(completedTasks || [])].forEach((t: CompletedTask) => {
+    const d = t.completed_at.split("T")[0];
+    tasksByDate.set(d, [...(tasksByDate.get(d) || []), t]);
+  });
 
-  if (pastRecaps?.length) {
-    const history = pastRecaps
-      .map((r: any) => `Semaine du ${r.week_start} :\n${r.compact_summary || "(pas de résumé)"}`)
-      .join("\n\n");
-    parts.push(`## Historique des semaines précédentes (pour contextualiser les schémas — comparer, pas répéter)\n${history}`);
-  }
+  const days = dateRange(weekStartStr, dateEnd);
+  const dayBlocks = days.map(date =>
+    buildDayBlock(
+      date,
+      journalByDate.get(date) || [],
+      sleepByDate.get(date),
+      activitiesByDate.get(date) || [],
+      tasksByDate.get(date) || [],
+      eventsByDate ? eventsByDate.get(date) || [] : null
+    )
+  );
 
-  if (parts.length <= 1 && !journalEntries?.length && !tasksDone.length) {
+  const hasAnyData =
+    (journalEntries?.length || 0) > 0 ||
+    (activities?.length || 0) > 0 ||
+    (sleep?.length || 0) > 0 ||
+    (completedTodos?.length || 0) > 0 ||
+    (completedTasks?.length || 0) > 0;
+
+  if (!hasAnyData) {
     return NextResponse.json({ error: "Aucune donnée cette semaine pour générer un récap" }, { status: 400 });
   }
 
-  const userMessage = `Voici les données de la semaine du ${weekStartStr} (lundi 00h00) au ${dateEnd} :\n\n${parts.join("\n\n---\n\n")}\n\nGénère le récap hebdomadaire.`;
+  const parts = [dayBlocks.join("\n\n")];
+
+  if (pastRecaps?.length) {
+    const history = pastRecaps
+      .map((r: any) => `Période du ${r.week_start} :\n${r.compact_summary || "(pas de résumé)"}`)
+      .join("\n\n");
+    parts.push(`## Historique des périodes précédentes (pour contextualiser les schémas — comparer, pas répéter)\n${history}`);
+  }
+
+  const userMessage = `Voici les données de la période du ${weekStartStr} au ${dateEnd} :\n\n${parts.join("\n\n---\n\n")}\n\nGénère le récap.`;
 
   const raw = await generateWithContext(SYSTEM_PROMPT, userMessage);
   const [content, compactSummary] = raw.split("---SUMMARY---").map(s => s.trim());

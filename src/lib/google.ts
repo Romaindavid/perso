@@ -84,6 +84,33 @@ export async function fetchCalendarEvents(accessToken: string, daysAhead: number
   return { events: allEvents, debug: { calendars: calendars.map(c => c.summary), timeMin, timeMax } };
 }
 
+export async function fetchCalendarEventsInRange(accessToken: string, timeMin: string, timeMax: string): Promise<any[]> {
+  const calRes = await fetch(
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const calendars: { id: string; summary: string }[] = calRes.ok
+    ? ((await calRes.json()).items || []).map((c: any) => ({ id: c.id, summary: c.summary }))
+    : [{ id: "primary", summary: "primary" }];
+
+  const allEvents: any[] = [];
+  for (const cal of calendars) {
+    const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "100" });
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) continue;
+    const data = await res.json();
+    for (const e of data.items || []) {
+      if (!e.summary) continue;
+      allEvents.push({ summary: e.summary, start: e.start?.dateTime || e.start?.date });
+    }
+  }
+
+  return allEvents;
+}
+
 export async function fetchRecentEmails(accessToken: string, days: number): Promise<any[]> {
   const after = new Date();
   after.setDate(after.getDate() - days);

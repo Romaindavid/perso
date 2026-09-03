@@ -34,6 +34,12 @@ interface CompletedTodo {
   tag?: string;
 }
 
+interface CalendarEvent {
+  summary: string;
+}
+
+const CALENDAR_WINDOW_DAYS = 30;
+
 const moods = [
   { value: "super", emoji: "😄", label: "Super" },
   { value: "bien", emoji: "🙂", label: "Bien" },
@@ -73,6 +79,7 @@ export default function JournalPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sleepData, setSleepData] = useState<Sleep[]>([]);
   const [completedTodos, setCompletedTodos] = useState<CompletedTodo[]>([]);
+  const [agendaByDate, setAgendaByDate] = useState<Record<string, CalendarEvent[]>>({});
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
@@ -119,6 +126,14 @@ export default function JournalPage() {
     });
     setCompletedTodos(todos);
     setLoading(false);
+
+    // Calendar events: recent window only, optional (silently empty if Google isn't connected)
+    const end = localDate(new Date());
+    const start = localDate(new Date(Date.now() - (CALENDAR_WINDOW_DAYS - 1) * 86400000));
+    fetch(`/api/calendar?start=${start}&end=${end}`)
+      .then(r => r.json())
+      .then(data => setAgendaByDate(data.events || {}))
+      .catch(() => {});
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -252,6 +267,7 @@ export default function JournalPage() {
         const sleep = sleepByDate.get(date);
         const activity = activitiesByDate.get(date);
         const dayTodos = completedTodos.filter(t => t.completed_at.split("T")[0] === date);
+        const agenda = agendaByDate[date] || [];
 
         return (
           <div key={date} className={dateIdx === 0 ? "mt-5" : "mt-[26px]"}>
@@ -301,6 +317,17 @@ export default function JournalPage() {
                       {activity ? `${activity.calories} kcal` : "pas d'activité"}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {agenda.length > 0 && (
+                <div className="bg-surface-container rounded-[22px] p-4">
+                  <p className="text-[11px] font-bold text-on-surface-variant tracking-[0.04em] uppercase">
+                    agenda · {agenda.length} événement{agenda.length > 1 ? "s" : ""}
+                  </p>
+                  <p className="text-[13.5px] text-on-surface mt-1.5 [text-wrap:pretty]">
+                    {agenda.map(e => e.summary).join(" · ")}
+                  </p>
                 </div>
               )}
 

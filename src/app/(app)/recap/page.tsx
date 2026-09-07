@@ -22,44 +22,51 @@ interface RecapQuestion {
   prompt: string;
 }
 
+interface ConcernWindow {
+  label: string;
+  count: number;
+}
+
 interface Concern {
   theme: string;
   sentence?: string;
-  count: number; // questions ouvertes du thème
-  bars: number[]; // 14 valeurs — questions ouvertes par jour sur la fenêtre
-  trend: "up" | "flat" | "down";
+  count: number; // questions ouvertes du thème, toutes dates confondues
+  windows: ConcernWindow[]; // 7j / 30j / 90j, cumulatif, ancré sur aujourd'hui
 }
 
-// Fenêtre de 14 jours avant la question ouverte la plus récente (pas "aujourd'hui" —
-// sinon deux semaines sans nouveau récap vident toutes les trames), une barre par
-// jour = questions du thème produites par un récap se terminant ce jour-là.
+// Trois fenêtres glissantes fixes plutôt qu'une trame quotidienne — beaucoup plus
+// lisible qu'une trame quotidienne quand les récaps arrivent au rythme d'un par
+// semaine ou moins : "combien de questions de ce thème sur les 7 / 30 / 90 derniers
+// jours", ancré sur aujourd'hui (pas sur le dernier récap généré).
+const CONCERN_WINDOWS = [
+  { label: "7 j", days: 7 },
+  { label: "30 j", days: 30 },
+  { label: "90 j", days: 90 },
+];
+
 function buildConcerns(active: RecapQuestion[], summaries: Record<string, string>): Concern[] {
   if (active.length === 0) return [];
 
-  const end = active.reduce((m, q) => (q.date > m ? q.date : m), active[0].date);
-  const days: string[] = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(end);
-    d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
-  }
+  const today = new Date();
+  const cutoffs = CONCERN_WINDOWS.map(w => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - w.days);
+    return d.toISOString().slice(0, 10);
+  });
 
   const byTheme = new Map<string, RecapQuestion[]>();
   active.forEach(q => byTheme.set(q.theme, [...(byTheme.get(q.theme) || []), q]));
 
   return [...byTheme.entries()]
-    .map(([theme, items]) => {
-      const bars = days.map(d => items.filter(q => q.date === d).length);
-      const recent = bars.slice(7).reduce((a, b) => a + b, 0);
-      const before = bars.slice(0, 7).reduce((a, b) => a + b, 0);
-      return {
-        theme,
-        sentence: summaries[theme],
-        count: items.length,
-        bars,
-        trend: recent > before ? "up" : recent < before ? "down" : "flat",
-      } as Concern;
-    })
+    .map(([theme, items]) => ({
+      theme,
+      sentence: summaries[theme],
+      count: items.length,
+      windows: CONCERN_WINDOWS.map((w, i) => ({
+        label: w.label,
+        count: items.filter(q => q.date >= cutoffs[i]).length,
+      })),
+    }))
     .sort((a, b) => b.count - a.count)
     .sort((a, b) => (a.theme === "Sans thème" ? 1 : 0) - (b.theme === "Sans thème" ? 1 : 0))
     .slice(0, 4);
@@ -71,15 +78,6 @@ const CONCERN_TINTS = [
   { bg: "#b9ecee", fg: "#1b1c1a", sub: "#3c6c6e", bar: "60,108,110" },
   { bg: "#efeeea", fg: "#404845", sub: "#717975", bar: "113,121,117" },
 ];
-
-const TREND_LABEL = { up: "↑ en hausse", flat: "→ constant", down: "↓ recule" } as const;
-
-const barStyle = (v: number, max: number, i: number, bar: string, down: boolean) => ({
-  flex: 1,
-  height: v === 0 ? 6 : Math.round(6 + (v / max) * 20),
-  borderRadius: 3,
-  background: `rgba(${bar},${down ? 0.35 - i * 0.017 : [0.28, 0.42, 0.56, 1][Math.floor(i / 3.5)]})`,
-});
 
 type Kind = "semaine" | "mois" | "annee";
 
@@ -478,7 +476,7 @@ export default function RecapPage() {
           <div className="flex flex-col gap-2.5">
             {concerns.map((c, i) => {
               const t = CONCERN_TINTS[i % CONCERN_TINTS.length];
-              const max = Math.max(...c.bars, 1);
+              const max = Math.max(...c.windows.map(w => w.count), 1);
               return (
                 <div key={c.theme} className="rounded-[26px] p-5" style={{ background: t.bg }}>
                   <div className="flex items-baseline gap-2">
@@ -486,8 +484,6 @@ export default function RecapPage() {
                     <span className="text-[11px] font-bold" style={{ color: t.sub }}>
                       {c.count} question{c.count > 1 ? "s" : ""}
                     </span>
-                    <span className="flex-1" />
-                    <span className="text-[11px] font-bold" style={{ color: t.sub }}>{TREND_LABEL[c.trend]}</span>
                   </div>
 
                   {c.sentence && (
@@ -496,9 +492,16 @@ export default function RecapPage() {
                     </p>
                   )}
 
-                  <div className="flex items-end gap-1 h-[26px] mt-4" aria-hidden>
-                    {c.bars.map((v, j) => (
-                      <span key={j} style={barStyle(v, max, j, t.bar, c.trend === "down")} />
+                  <div className="flex items-end gap-4 mt-4">
+                    {c.windows.map(w => (
+                      <div key={w.label} className="flex-1 flex flex-col items-center gap-1.5">
+                        <span className="text-[13px] font-bold" style={{ color: t.fg }}>{w.count}</span>
+                        <div
+                          className="w-full rounded-[4px]"
+                          style={{ height: Math.max(6, Math.round((w.count / max) * 32)), background: `rgba(${t.bar},.45)` }}
+                        />
+                        <span className="text-[10.5px]" style={{ color: t.sub }}>{w.label}</span>
+                      </div>
                     ))}
                   </div>
                 </div>

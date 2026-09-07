@@ -18,32 +18,68 @@ interface RecapQuestion {
   question: string;
   theme: string;
   weekLabel: string;
+  date: string; // ISO — fin de période du récap qui l'a produite
   prompt: string;
 }
 
 interface Concern {
   theme: string;
-  count: number;
-  latest: RecapQuestion;
+  sentence?: string;
+  count: number; // questions ouvertes du thème
+  bars: number[]; // 14 valeurs — questions ouvertes par jour sur la fenêtre
+  trend: "up" | "flat" | "down";
 }
 
-// Derived live from the currently open "À garder en tête" questions — same
-// grouping, just the top themes by volume as a quick-glance summary above
-// the full list. No separate generation step, no data beyond what's already
-// on screen.
-function topConcerns(groups: { theme: string; items: RecapQuestion[] }[]): Concern[] {
-  return groups
-    .filter(g => g.theme !== "Sans thème")
-    .slice(0, 4)
-    .map(g => ({ theme: g.theme, count: g.items.length, latest: g.items[0] }));
+// Fenêtre de 14 jours avant la question ouverte la plus récente (pas "aujourd'hui" —
+// sinon deux semaines sans nouveau récap vident toutes les trames), une barre par
+// jour = questions du thème produites par un récap se terminant ce jour-là.
+function buildConcerns(active: RecapQuestion[], summaries: Record<string, string>): Concern[] {
+  if (active.length === 0) return [];
+
+  const end = active.reduce((m, q) => (q.date > m ? q.date : m), active[0].date);
+  const days: string[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  const byTheme = new Map<string, RecapQuestion[]>();
+  active.forEach(q => byTheme.set(q.theme, [...(byTheme.get(q.theme) || []), q]));
+
+  return [...byTheme.entries()]
+    .map(([theme, items]) => {
+      const bars = days.map(d => items.filter(q => q.date === d).length);
+      const recent = bars.slice(7).reduce((a, b) => a + b, 0);
+      const before = bars.slice(0, 7).reduce((a, b) => a + b, 0);
+      return {
+        theme,
+        sentence: summaries[theme],
+        count: items.length,
+        bars,
+        trend: recent > before ? "up" : recent < before ? "down" : "flat",
+      } as Concern;
+    })
+    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => (a.theme === "Sans thème" ? 1 : 0) - (b.theme === "Sans thème" ? 1 : 0))
+    .slice(0, 4);
 }
 
 const CONCERN_TINTS = [
-  { bg: "#ffdf96", fg: "#1b1c1a", sub: "#735802" },
-  { bg: "#386458", fg: "#f4fffa", sub: "rgba(244,255,250,.75)" },
-  { bg: "#b9ecee", fg: "#1b1c1a", sub: "#3c6c6e" },
-  { bg: "#efeeea", fg: "#404845", sub: "#717975" },
+  { bg: "#ffdf96", fg: "#1b1c1a", sub: "#735802", bar: "115,88,2" },
+  { bg: "#386458", fg: "#f4fffa", sub: "rgba(244,255,250,.75)", bar: "244,255,250" },
+  { bg: "#b9ecee", fg: "#1b1c1a", sub: "#3c6c6e", bar: "60,108,110" },
+  { bg: "#efeeea", fg: "#404845", sub: "#717975", bar: "113,121,117" },
 ];
+
+const TREND_LABEL = { up: "↑ en hausse", flat: "→ constant", down: "↓ recule" } as const;
+
+const barStyle = (v: number, max: number, i: number, bar: string, down: boolean) => ({
+  flex: 1,
+  height: v === 0 ? 6 : Math.round(6 + (v / max) * 20),
+  borderRadius: 3,
+  background: `rgba(${bar},${down ? 0.35 - i * 0.017 : [0.28, 0.42, 0.56, 1][Math.floor(i / 3.5)]})`,
+});
 
 type Kind = "semaine" | "mois" | "annee";
 
@@ -219,6 +255,7 @@ export default function RecapPage() {
   const [archived, setArchived] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
 
   const [kind, setKind] = useState<Kind>("semaine");
   const [periodIndex, setPeriodIndex] = useState(0);
@@ -328,6 +365,7 @@ export default function RecapPage() {
         question,
         theme,
         weekLabel,
+        date: r.week_end,
         prompt: buildPrompt(question),
       });
     });
@@ -335,6 +373,38 @@ export default function RecapPage() {
 
   const activeQuestions = allQuestions.filter(q => !archived.has(q.key));
   const archivedQuestions = allQuestions.filter(q => archived.has(q.key));
+
+  const themeSummaryPayload = useMemo(() => {
+    const byTheme = new Map<string, string[]>();
+    activeQuestions.forEach(q => byTheme.set(q.theme, [...(byTheme.get(q.theme) || []), q.question]));
+    return [...byTheme.entries()].map(([theme, questions]) => ({ theme, questions }));
+  }, [activeQuestions]);
+
+  const themeSummaryCacheKey = useMemo(
+    () => JSON.stringify(themeSummaryPayload.map(t => [t.theme, [...t.questions].sort()])),
+    [themeSummaryPayload]
+  );
+
+  useEffect(() => {
+    if (!themeSummaryPayload.length) { setSummaries({}); return; }
+    const cached = sessionStorage.getItem(`theme-summaries:${themeSummaryCacheKey}`);
+    if (cached) { setSummaries(JSON.parse(cached)); return; }
+
+    let alive = true;
+    fetch("/api/theme-summaries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ themes: themeSummaryPayload }),
+    })
+      .then(r => r.json())
+      .then(({ summaries }) => {
+        if (!alive) return;
+        sessionStorage.setItem(`theme-summaries:${themeSummaryCacheKey}`, JSON.stringify(summaries));
+        setSummaries(summaries);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [themeSummaryCacheKey]);
 
   const byTheme = new Map<string, RecapQuestion[]>();
   activeQuestions.forEach(q => {
@@ -345,7 +415,7 @@ export default function RecapPage() {
     .sort((a, b) => (a[0] === "Sans thème" ? 1 : 0) - (b[0] === "Sans thème" ? 1 : 0))
     .map(([theme, items]) => ({ theme, items, tint: tintOf(theme) }));
 
-  const concerns = topConcerns(groups);
+  const concerns = buildConcerns(activeQuestions, summaries);
 
   if (loading) {
     return (
@@ -397,29 +467,40 @@ export default function RecapPage() {
         <h1 className="text-[22px] font-bold -tracking-[0.02em] text-on-surface">Récaps</h1>
       </div>
 
-      {/* En ce moment — aperçu des thèmes les plus fournis parmi les questions ouvertes */}
+      {/* En ce moment — dérivé en live des questions ouvertes, non actionnable */}
       {concerns.length > 0 && (
         <div className="mt-5 mb-6">
           <div className="flex items-baseline justify-between mx-1 mb-3.5">
             <h2 className="text-sm font-bold text-on-surface-variant">En ce moment</h2>
-            <span className="text-xs text-outline">questions ouvertes</span>
+            <span className="text-xs text-outline">d'après tes questions ouvertes</span>
           </div>
 
           <div className="flex flex-col gap-2.5">
             {concerns.map((c, i) => {
               const t = CONCERN_TINTS[i % CONCERN_TINTS.length];
+              const max = Math.max(...c.bars, 1);
               return (
                 <div key={c.theme} className="rounded-[26px] p-5" style={{ background: t.bg }}>
                   <div className="flex items-baseline gap-2">
                     <span className="text-[13px] font-bold tracking-[-0.01em]" style={{ color: t.fg }}>{c.theme}</span>
                     <span className="text-[11px] font-bold" style={{ color: t.sub }}>
-                      {c.count} question{c.count > 1 ? "s" : ""} ouverte{c.count > 1 ? "s" : ""}
+                      {c.count} question{c.count > 1 ? "s" : ""}
                     </span>
+                    <span className="flex-1" />
+                    <span className="text-[11px] font-bold" style={{ color: t.sub }}>{TREND_LABEL[c.trend]}</span>
                   </div>
 
-                  <p className="text-[15px] leading-[23px] font-medium mt-2.5 [text-wrap:pretty]" style={{ color: t.fg }}>
-                    {c.latest.question}
-                  </p>
+                  {c.sentence && (
+                    <p className="text-[15px] leading-[23px] font-medium mt-2.5 [text-wrap:pretty]" style={{ color: t.fg }}>
+                      {c.sentence}
+                    </p>
+                  )}
+
+                  <div className="flex items-end gap-1 h-[26px] mt-4" aria-hidden>
+                    {c.bars.map((v, j) => (
+                      <span key={j} style={barStyle(v, max, j, t.bar, c.trend === "down")} />
+                    ))}
+                  </div>
                 </div>
               );
             })}

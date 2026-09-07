@@ -31,42 +31,43 @@ interface Concern {
   theme: string;
   sentence?: string;
   count: number; // questions ouvertes du thème, toutes dates confondues
-  windows: ConcernWindow[]; // 7j / 30j / 90j, cumulatif, ancré sur aujourd'hui
+  windows: ConcernWindow[]; // buckets exclusifs, du plus ancien (gauche) au plus récent (droite) — la somme vaut toujours `count`
 }
 
-// Trois fenêtres glissantes fixes plutôt qu'une trame quotidienne — beaucoup plus
-// lisible qu'une trame quotidienne quand les récaps arrivent au rythme d'un par
-// semaine ou moins : "combien de questions de ce thème sur les 7 / 30 / 90 derniers
-// jours", ancré sur aujourd'hui (pas sur le dernier récap généré).
-const CONCERN_WINDOWS = [
-  { label: "7 j", days: 7 },
-  { label: "30 j", days: 30 },
-  { label: "90 j", days: 90 },
-];
-
+// Trois buckets exclusifs et contigus — pas des fenêtres cumulatives — pour que la
+// somme des trois corresponde toujours au nombre total de questions du thème :
+// "plus de 30 jours" / "8 à 30 jours" / "7 derniers jours", ancrés sur aujourd'hui.
+// Ordre gauche → droite : du plus ancien au plus récent.
 function buildConcerns(active: RecapQuestion[], summaries: Record<string, string>): Concern[] {
   if (active.length === 0) return [];
 
   const today = new Date();
-  const cutoffs = CONCERN_WINDOWS.map(w => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - w.days);
-    return d.toISOString().slice(0, 10);
-  });
+  const cutoff7 = new Date(today);
+  cutoff7.setDate(cutoff7.getDate() - 7);
+  const cutoff30 = new Date(today);
+  cutoff30.setDate(cutoff30.getDate() - 30);
+  const c7 = cutoff7.toISOString().slice(0, 10);
+  const c30 = cutoff30.toISOString().slice(0, 10);
 
   const byTheme = new Map<string, RecapQuestion[]>();
   active.forEach(q => byTheme.set(q.theme, [...(byTheme.get(q.theme) || []), q]));
 
   return [...byTheme.entries()]
-    .map(([theme, items]) => ({
-      theme,
-      sentence: summaries[theme],
-      count: items.length,
-      windows: CONCERN_WINDOWS.map((w, i) => ({
-        label: w.label,
-        count: items.filter(q => q.date >= cutoffs[i]).length,
-      })),
-    }))
+    .map(([theme, items]) => {
+      const recent = items.filter(q => q.date >= c7).length;
+      const mid = items.filter(q => q.date >= c30 && q.date < c7).length;
+      const older = items.length - recent - mid; // reste, quelle que soit son ancienneté — garantit une somme exacte
+      return {
+        theme,
+        sentence: summaries[theme],
+        count: items.length,
+        windows: [
+          { label: "90 j", count: older },
+          { label: "30 j", count: mid },
+          { label: "7 j", count: recent },
+        ],
+      };
+    })
     .sort((a, b) => b.count - a.count)
     .sort((a, b) => (a.theme === "Sans thème" ? 1 : 0) - (b.theme === "Sans thème" ? 1 : 0))
     .slice(0, 4);

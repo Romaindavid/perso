@@ -19,7 +19,6 @@ interface RecapQuestion {
   theme: string;
   weekLabel: string;
   date: string; // ISO — fin de période du récap qui l'a produite
-  prompt: string;
 }
 
 interface ConcernWindow {
@@ -228,10 +227,6 @@ function tintFor(id: string): string {
   return TINTS[sum % TINTS.length];
 }
 
-function buildPrompt(question: string): string {
-  return `J'ai une question qui m'a été soumise dans mon récap hebdo : "${question}"\n\nJ'aimerais creuser ça avec toi. Qu'est-ce que tu en perçois à la lumière de ce que tu sais de moi ?`;
-}
-
 const ARCHIVED_KEY = "recap_questions_archived";
 
 function loadArchived(): Set<string> {
@@ -253,7 +248,6 @@ export default function RecapPage() {
   const [openRecap, setOpenRecap] = useState<Recap | null>(null);
   const [archived, setArchived] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<Record<string, string>>({});
 
   const [kind, setKind] = useState<Kind>("semaine");
@@ -347,12 +341,6 @@ export default function RecapPage() {
     saveArchived(next);
   }
 
-  async function copyPrompt(key: string, prompt: string) {
-    await navigator.clipboard.writeText(prompt);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  }
-
   // Build questions list from all recaps
   const allQuestions: RecapQuestion[] = [];
   recaps.forEach(r => {
@@ -365,7 +353,6 @@ export default function RecapPage() {
         theme,
         weekLabel,
         date: r.week_end,
-        prompt: buildPrompt(question),
       });
     });
   });
@@ -549,13 +536,6 @@ export default function RecapPage() {
                         </p>
                         <div className="flex items-center gap-2.5 mt-[9px]">
                           <span className="text-[10.5px]" style={{ color: tint.sub }}>{q.weekLabel}</span>
-                          <button
-                            onClick={() => copyPrompt(q.key, q.prompt)}
-                            className="rounded-full px-[13px] py-[7px] text-[11px] font-bold"
-                            style={{ background: tint.btn, color: tint.fg }}
-                          >
-                            {copiedKey === q.key ? "✓ Copié" : "Écrire là-dessus"}
-                          </button>
                         </div>
                       </div>
                     </div>

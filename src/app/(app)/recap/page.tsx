@@ -21,6 +21,59 @@ interface RecapQuestion {
   prompt: string;
 }
 
+interface Concern {
+  theme: string;
+  sentence: string;
+  dates: string[]; // ISO, chronologique
+  count: number; // mentions sur la fenêtre
+  bars: number[]; // 14 valeurs, 0..n mentions par jour
+  trend: "up" | "flat" | "down";
+}
+
+function extractConcerns(content: string, endDate: Date): Concern[] {
+  const match = content.match(/##[^\n]*En ce moment\s*\n([\s\S]*?)(?=\n##|$)/);
+  if (!match) return [];
+
+  const days: string[] = []; // 14 jours, du plus ancien à aujourd'hui
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(endDate);
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  return match[1]
+    .split("\n")
+    .map(l => l.replace(/^[-*]\s*/, "").trim())
+    .map(l => l.match(/^\*\*(.+?)\*\*\s*[—–-]\s*(.+?)\s*[—–-]\s*dates:\s*(.*)$/))
+    .filter((m): m is RegExpMatchArray => !!m)
+    .map(m => {
+      const dates = m[3].split(",").map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s));
+      const bars = days.map(d => dates.filter(x => x === d).length);
+      const recent = bars.slice(7).reduce((a, b) => a + b, 0);
+      const before = bars.slice(0, 7).reduce((a, b) => a + b, 0);
+      const trend = recent > before ? "up" : recent < before ? "down" : "flat";
+      return { theme: m[1].trim(), sentence: m[2].trim(), dates, count: dates.length, bars, trend } as Concern;
+    })
+    .filter(c => c.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4);
+}
+
+const CONCERN_TINTS = [
+  { bg: "#ffdf96", fg: "#1b1c1a", sub: "#735802", bar: "115,88,2" },
+  { bg: "#386458", fg: "#f4fffa", sub: "rgba(244,255,250,.75)", bar: "244,255,250" },
+  { bg: "#b9ecee", fg: "#1b1c1a", sub: "#3c6c6e", bar: "60,108,110" },
+  { bg: "#efeeea", fg: "#404845", sub: "#717975", bar: "113,121,117" },
+];
+
+const TREND_LABEL = { up: "↑ en hausse", flat: "→ constant", down: "↓ recule" } as const;
+
+const barStyle = (v: number, max: number, i: number, bar: string, down: boolean) => {
+  const h = v === 0 ? 6 : Math.round(6 + (v / max) * 20);
+  const op = down ? 0.35 - i * 0.017 : [0.28, 0.42, 0.56, 1][Math.floor(i / 3.5)];
+  return { flex: 1, height: h, borderRadius: 3, background: `rgba(${bar},${op})` };
+};
+
 type Kind = "semaine" | "mois" | "annee";
 
 interface Period {
@@ -321,6 +374,11 @@ export default function RecapPage() {
     .sort((a, b) => (a[0] === "Sans thème" ? 1 : 0) - (b[0] === "Sans thème" ? 1 : 0))
     .map(([theme, items]) => ({ theme, items, tint: tintOf(theme) }));
 
+  const latestRecap = recaps[0];
+  const concerns = latestRecap
+    ? extractConcerns(latestRecap.content, new Date(latestRecap.week_end + "T12:00:00"))
+    : [];
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -371,8 +429,47 @@ export default function RecapPage() {
         <h1 className="text-[22px] font-bold -tracking-[0.02em] text-on-surface">Récaps</h1>
       </div>
 
+      {/* En ce moment — préoccupations dominantes, décoratif/informatif uniquement */}
+      {concerns.length > 0 && (
+        <div className="mt-5 mb-6">
+          <div className="flex items-baseline justify-between mx-1 mb-3.5">
+            <h2 className="text-sm font-bold text-on-surface-variant">En ce moment</h2>
+            <span className="text-xs text-outline">14 derniers jours</span>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            {concerns.map((c, i) => {
+              const t = CONCERN_TINTS[i % CONCERN_TINTS.length];
+              const max = Math.max(...c.bars, 1);
+              return (
+                <div key={c.theme} className="rounded-[26px] p-5" style={{ background: t.bg }}>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] font-bold tracking-[-0.01em]" style={{ color: t.fg }}>{c.theme}</span>
+                    <span className="text-[11px] font-bold" style={{ color: t.sub }}>
+                      {c.count} mention{c.count > 1 ? "s" : ""}
+                    </span>
+                    <span className="flex-1" />
+                    <span className="text-[11px] font-bold" style={{ color: t.sub }}>{TREND_LABEL[c.trend]}</span>
+                  </div>
+
+                  <p className="text-[15px] leading-[23px] font-medium mt-2.5 [text-wrap:pretty]" style={{ color: t.fg }}>
+                    {c.sentence}
+                  </p>
+
+                  <div className="flex items-end gap-1 h-[26px] mt-4" aria-hidden>
+                    {c.bars.map((v, j) => (
+                      <span key={j} style={barStyle(v, max, j, t.bar, c.trend === "down")} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* À garder en tête, groupé par thème */}
-      <div className="mt-5">
+      <div className={concerns.length > 0 ? "" : "mt-5"}>
         <div className="flex items-baseline justify-between mx-1 mb-3.5">
           <h2 className="text-sm font-bold text-on-surface-variant">À garder en tête</h2>
           <span className="text-xs text-outline">

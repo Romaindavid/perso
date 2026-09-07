@@ -53,6 +53,18 @@ semaine du..." plutôt que "X cause Y").
 Si rien ne se confirme sur plusieurs semaines, dis-le franchement et ne
 force pas une observation.
 
+## 🌡️ En ce moment
+
+Deux à quatre thèmes qui occupent le plus la personne sur la période, du plus présent au moins présent.
+Format de chaque ligne, sans rien d'autre :
+- **Thème** — phrase de synthèse — dates: YYYY-MM-DD, YYYY-MM-DD, ...
+
+Contraintes :
+- Le thème est repris mot pour mot dans la liste des thèmes de la section Schémas détectés. Un thème par ligne, jamais deux fois le même.
+- La phrase fait une à deux propositions, au présent, adressée à la personne (« tu »). Elle dit ce qui se passe et ce qui est en jeu, pas ce qu'il faudrait faire. Pas de question, pas de conseil, pas de superlatif.
+- \`dates:\` liste toutes les dates d'entrées de la période où ce thème est présent, une fois chacune, dans l'ordre chronologique. Ne pas inventer de date : uniquement des dates d'entrées réelles.
+- Un thème qui n'apparaît plus depuis longtemps mais qui comptait avant reste éligible : la phrase le dit alors (« plus rien depuis le 22 août »), et \`dates:\` ne contient que ses dates réelles.
+
 ## ❓ Questions à creuser
 2-3 questions maximum. Psychologiques et introspectives, jamais
 descriptives — pas de question dont la réponse est déjà dans les données.

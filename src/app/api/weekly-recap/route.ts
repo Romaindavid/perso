@@ -99,6 +99,22 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Themes used in past "Questions à creuser", most frequent first — passed back
+// to the model so it reuses an existing label instead of coining a near-duplicate
+// one each time (e.g. "Travail" vs "Charge professionnelle").
+function extractRecentThemes(pastRecaps: { content: string }[]): string[] {
+  const counts = new Map<string, number>();
+  pastRecaps.forEach(r => {
+    const match = r.content?.match(/##[^\n]*Questions à creuser\s*\n([\s\S]*?)(?=\n##|$)/);
+    if (!match) return;
+    match[1].split("\n").forEach(line => {
+      const m = line.match(/^[-*]\s*\*\*(.+?)\*\*/);
+      if (m) counts.set(m[1].trim(), (counts.get(m[1].trim()) || 0) + 1);
+    });
+  });
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([theme]) => theme);
+}
+
 interface Activity {
   date: string;
   type: string;
@@ -192,7 +208,7 @@ export async function POST(request: Request) {
     supabase.from("journal_entries").select("created_at, content, mood").gte("created_at", weekStart.toISOString()).lte("created_at", nowIso).order("created_at"),
     supabase.from("project_todos").select("content, completed_at").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
     supabase.from("tasks").select("content, completed_at").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
-    supabase.from("weekly_recaps").select("week_start, compact_summary").order("week_start", { ascending: false }).limit(8),
+    supabase.from("weekly_recaps").select("week_start, compact_summary, content").order("week_start", { ascending: false }).limit(8),
   ]);
 
   // Calendar events are optional — skip silently if Google isn't connected or the API fails.
@@ -258,6 +274,11 @@ export async function POST(request: Request) {
       .map((r: any) => `Période du ${r.week_start} :\n${r.compact_summary || "(pas de résumé)"}`)
       .join("\n\n");
     parts.push(`## Historique des périodes précédentes (pour contextualiser les schémas — comparer, pas répéter)\n${history}`);
+
+    const recentThemes = extractRecentThemes(pastRecaps as { content: string }[]);
+    if (recentThemes.length) {
+      parts.push(`## Thèmes déjà utilisés récemment pour "Questions à creuser"\n${recentThemes.join(", ")}\nRéutilise un de ces thèmes tel quel s'il correspond au sujet de ta question, plutôt que d'en formuler un nouveau très proche. N'en crée un nouveau que si aucun ne convient vraiment.`);
+    }
   }
 
   const userMessage = `Voici les données de la période du ${weekStartStr} au ${dateEnd} :\n\n${parts.join("\n\n---\n\n")}\n\nGénère le récap.`;

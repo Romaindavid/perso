@@ -132,9 +132,7 @@ function shortLabel(r: Recap): string {
 }
 
 function extractQuestions(content: string): { theme: string; question: string }[] {
-  const match =
-    content.match(/##\s*❓\s*Questions à creuser\s*\n([\s\S]*?)(?=\n##|$)/) ||
-    content.match(/##\s*🧭\s*Questions à creuser\s*\n([\s\S]*?)(?=\n##|$)/);
+  const match = content.match(/##[^\n]*Questions à creuser\s*\n([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   return match[1]
     .split("\n")
@@ -159,8 +157,8 @@ function tintOf(theme: string) {
 
 function extractGlance(content: string): string {
   const match =
-    content.match(/##\s*📅\s*Résumé de la période\s*\n([\s\S]*?)(?=\n##|$)/) ||
-    content.match(/##\s*📍\s*En un coup d'œil\s*\n([\s\S]*?)(?=\n##|$)/);
+    content.match(/##[^\n]*Résumé de la période\s*\n([\s\S]*?)(?=\n##|$)/) ||
+    content.match(/##[^\n]*En un coup d'œil\s*\n([\s\S]*?)(?=\n##|$)/);
   const text = (match ? match[1] : content).replace(/[#*_>-]/g, " ").replace(/\s+/g, " ").trim();
   return text.slice(0, 90);
 }

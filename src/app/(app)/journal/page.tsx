@@ -38,6 +38,14 @@ interface CalendarEvent {
   summary: string;
 }
 
+interface OnThisDayEntry {
+  year: number;
+  date: string; // ISO
+  dateLabel: string; // "samedi 2 septembre 2018"
+  agoLabel: string; // "Il y a 8 ans"
+  content: string;
+}
+
 const CALENDAR_WINDOW_DAYS = 30;
 
 const moods = [
@@ -74,12 +82,47 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// Même mois+jour, années antérieures. Une entrée par année (la plus longue si
+// plusieurs ce jour-là), triées de la plus ancienne à la plus récente.
+function buildOnThisDay(allEntries: { created_at: string; content: string }[], today: Date): OnThisDayEntry[] {
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  const currentYear = today.getFullYear();
+
+  const byYear = new Map<number, { date: string; content: string }>();
+  allEntries.forEach(e => {
+    const [y, m, d] = e.created_at.slice(0, 10).split("-");
+    if (m !== mm || d !== dd) return;
+    const year = Number(y);
+    if (year >= currentYear) return;
+    const existing = byYear.get(year);
+    if (!existing || e.content.length > existing.content.length) {
+      byYear.set(year, { date: e.created_at, content: e.content });
+    }
+  });
+
+  return [...byYear.entries()]
+    .map(([year, { date, content }]) => {
+      const ago = currentYear - year;
+      return {
+        year,
+        date,
+        dateLabel: capitalize(new Date(date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })),
+        agoLabel: `Il y a ${ago} an${ago > 1 ? "s" : ""}`,
+        content,
+      };
+    })
+    .sort((a, b) => a.year - b.year);
+}
+
 export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sleepData, setSleepData] = useState<Sleep[]>([]);
   const [completedTodos, setCompletedTodos] = useState<CompletedTodo[]>([]);
   const [agendaByDate, setAgendaByDate] = useState<Record<string, CalendarEvent[]>>({});
+  const [onThisDayEntries, setOnThisDayEntries] = useState<{ created_at: string; content: string }[]>([]);
+  const [onThisDayYear, setOnThisDayYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
@@ -106,16 +149,18 @@ export default function JournalPage() {
 
   async function loadAll() {
     setLoading(true);
-    const [{ data: j }, { data: a }, { data: s }, { data: pt }, { data: tk }] = await Promise.all([
+    const [{ data: j }, { data: a }, { data: s }, { data: pt }, { data: tk }, { data: allJ }] = await Promise.all([
       supabase.from("journal_entries").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("garmin_activities").select("*").order("date", { ascending: false }).limit(100),
       supabase.from("garmin_sleep").select("*").order("date", { ascending: false }).limit(60),
       supabase.from("project_todos").select("*, projects(name)").eq("done", true).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(50),
       supabase.from("tasks").select("*").eq("done", true).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(50),
+      supabase.from("journal_entries").select("created_at, content"),
     ]);
     setEntries(j || []);
     setActivities(a || []);
     setSleepData(s || []);
+    setOnThisDayEntries(allJ || []);
 
     const todos: CompletedTodo[] = [];
     pt?.forEach((t: any) => {
@@ -170,6 +215,9 @@ export default function JournalPage() {
   completedTodos.forEach(t => dates.add(t.completed_at.split("T")[0]));
 
   const sortedDates = Array.from(dates).sort((a, b) => b.localeCompare(a));
+
+  const onThisDay = buildOnThisDay(onThisDayEntries, new Date());
+  const currentOnThisDay = onThisDay.find(e => e.year === onThisDayYear) || onThisDay[0];
 
   const sleepByDate = new Map(sleepData.map(s => [s.date, s]));
   const activitiesByDate = new Map<string, Activity>();
@@ -275,6 +323,38 @@ export default function JournalPage() {
               <span className="text-[15px] font-bold text-on-surface">{primary}</span>
               {secondary && <span className="text-xs text-outline">{secondary}</span>}
             </div>
+
+            {dateIdx === 0 && date === today && currentOnThisDay && (
+              <div className="bg-[#efeeea] rounded-[26px] p-5 mb-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-bold text-[#404845] tracking-[-0.01em]">{currentOnThisDay.agoLabel}</span>
+                  <span className="text-[11.5px] text-[#717975]">{currentOnThisDay.dateLabel}</span>
+                </div>
+
+                <p className="text-[15px] leading-6 text-[#1b1c1a] mt-3 [text-wrap:pretty] whitespace-pre-line">
+                  {currentOnThisDay.content}
+                </p>
+
+                {onThisDay.length > 1 && (
+                  <div className="flex items-center gap-1.5 mt-4">
+                    {onThisDay.map(e => (
+                      <button
+                        key={e.year}
+                        onClick={() => setOnThisDayYear(e.year)}
+                        className={
+                          e.year === currentOnThisDay.year
+                            ? "text-[11.5px] font-bold text-[#1b1c1a] bg-[#fbf9f5] rounded-full px-3 py-[7px]"
+                            : "text-[11.5px] font-semibold text-[#717975] px-2.5 py-[7px]"
+                        }
+                      >
+                        {e.year}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               {dayEntries.map(entry => {
                 const moodInfo = entry.mood ? moods.find(m => m.value === entry.mood) : null;

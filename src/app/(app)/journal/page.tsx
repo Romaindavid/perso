@@ -219,6 +219,37 @@ export default function JournalPage() {
   const onThisDay = buildOnThisDay(onThisDayEntries, new Date());
   const currentOnThisDay = onThisDay.find(e => e.year === onThisDayYear) || onThisDay[0];
 
+  const onThisDayCard = currentOnThisDay && (
+    <div className="bg-[#efeeea] rounded-[26px] p-5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs font-bold text-[#404845] tracking-[-0.01em]">{currentOnThisDay.agoLabel}</span>
+        <span className="text-[11.5px] text-[#717975]">{currentOnThisDay.dateLabel}</span>
+      </div>
+
+      <p className="text-[15px] leading-6 text-[#1b1c1a] mt-3 [text-wrap:pretty] whitespace-pre-line">
+        {currentOnThisDay.content}
+      </p>
+
+      {onThisDay.length > 1 && (
+        <div className="flex items-center gap-1.5 mt-4">
+          {onThisDay.map(e => (
+            <button
+              key={e.year}
+              onClick={() => setOnThisDayYear(e.year)}
+              className={
+                e.year === currentOnThisDay.year
+                  ? "text-[11.5px] font-bold text-[#1b1c1a] bg-[#fbf9f5] rounded-full px-3 py-[7px]"
+                  : "text-[11.5px] font-semibold text-[#717975] px-2.5 py-[7px]"
+              }
+            >
+              {e.year}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const sleepByDate = new Map(sleepData.map(s => [s.date, s]));
   const activitiesByDate = new Map<string, Activity>();
   activities.forEach(a => { if (!activitiesByDate.has(a.date)) activitiesByDate.set(a.date, a); });
@@ -308,6 +339,20 @@ export default function JournalPage() {
         </form>
       )}
 
+      {/* Aujourd'hui n'a pas forcément de groupe (rien encore écrit ce jour) — l'encart
+          "il y a N ans" a quand même besoin d'un endroit où s'afficher. */}
+      {!sortedDates.includes(today) && currentOnThisDay && (
+        <div className="mt-5">
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="text-[15px] font-bold text-on-surface">Aujourd&apos;hui</span>
+            <span className="text-xs text-outline">
+              {capitalize(new Date(today + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }))}
+            </span>
+          </div>
+          {onThisDayCard}
+        </div>
+      )}
+
       {/* Timeline */}
       {sortedDates.map((date, dateIdx) => {
         const { primary, secondary } = dayHeader(date, today, yesterday);
@@ -324,35 +369,8 @@ export default function JournalPage() {
               {secondary && <span className="text-xs text-outline">{secondary}</span>}
             </div>
 
-            {dateIdx === 0 && date === today && currentOnThisDay && (
-              <div className="bg-[#efeeea] rounded-[26px] p-5 mb-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-xs font-bold text-[#404845] tracking-[-0.01em]">{currentOnThisDay.agoLabel}</span>
-                  <span className="text-[11.5px] text-[#717975]">{currentOnThisDay.dateLabel}</span>
-                </div>
-
-                <p className="text-[15px] leading-6 text-[#1b1c1a] mt-3 [text-wrap:pretty] whitespace-pre-line">
-                  {currentOnThisDay.content}
-                </p>
-
-                {onThisDay.length > 1 && (
-                  <div className="flex items-center gap-1.5 mt-4">
-                    {onThisDay.map(e => (
-                      <button
-                        key={e.year}
-                        onClick={() => setOnThisDayYear(e.year)}
-                        className={
-                          e.year === currentOnThisDay.year
-                            ? "text-[11.5px] font-bold text-[#1b1c1a] bg-[#fbf9f5] rounded-full px-3 py-[7px]"
-                            : "text-[11.5px] font-semibold text-[#717975] px-2.5 py-[7px]"
-                        }
-                      >
-                        {e.year}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+            {date === today && onThisDayCard && (
+              <div className="mb-2">{onThisDayCard}</div>
             )}
 
             <div className="flex flex-col gap-2">

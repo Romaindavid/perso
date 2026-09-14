@@ -29,8 +29,15 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Vercel's cron scheduler has no session cookie — let it through here, the
+  // route itself checks the same CRON_SECRET bearer token before doing anything.
+  const isCronRequest =
+    request.nextUrl.pathname === "/api/garmin/sync" &&
+    request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+
   if (
     !user &&
+    !isCronRequest &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/api/auth")
   ) {

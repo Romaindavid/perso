@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { GarminConnect } from "garmin-connect";
 
 export const maxDuration = 60;
@@ -25,15 +26,22 @@ function daysBetween(from: string, to: string): string[] {
   return days;
 }
 
-export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+// Garmin sometimes logs a real sport (e.g. wing foiling) under the generic
+// "other" typeKey when the watch wasn't set to the matching activity profile.
+// The human-readable activityName still names it, so recover the sport from
+// there rather than leaving it uselessly generic.
+function resolveActivityType(typeKey: string, activityName: string | undefined): string {
+  if (typeKey !== "other" && typeKey !== "unknown") return typeKey;
+  const name = (activityName || "").toLowerCase();
+  if (name.includes("wingfoil") || name.includes("wing foil") || /\bwing\b/.test(name)) return "wingfoiling";
+  return typeKey;
+}
 
+async function runSync(supabase: any, userId: string) {
   const garminEmail = process.env.GARMIN_EMAIL;
   const garminPassword = process.env.GARMIN_PASSWORD;
   if (!garminEmail || !garminPassword) {
-    return NextResponse.json({ error: "Garmin credentials not configured" }, { status: 500 });
+    throw new Error("Garmin credentials not configured");
   }
 
   const GCClient = new GarminConnect({
@@ -59,7 +67,7 @@ export async function POST(request: Request) {
       const ds = sleep?.dailySleepDTO;
       if (ds?.sleepTimeSeconds) {
         await supabase.from("garmin_sleep").upsert({
-          user_id: user.id,
+          user_id: userId,
           date: day,
           duration_hours: Math.round((ds.sleepTimeSeconds / 3600) * 100) / 100,
           deep_sleep_minutes: ds.deepSleepSeconds ? Math.round(ds.deepSleepSeconds / 60) : null,
@@ -75,7 +83,7 @@ export async function POST(request: Request) {
   const metricsDays = daysBetween(lastMetrics, today);
   for (const day of metricsDays) {
     const m: Record<string, any> = {
-      user_id: user.id, date: day,
+      user_id: userId, date: day,
       resting_hr: null, hrv: null, weight: null,
       body_fat_pct: null, muscle_mass_kg: null, bone_mass_kg: null, water_pct: null,
     };
@@ -109,9 +117,9 @@ export async function POST(request: Request) {
     if (!date || date < lastActivity) continue;
     const avgHR = (a as any).averageHR;
     const record = {
-      user_id: user.id,
+      user_id: userId,
       date,
-      type: (a as any).activityType?.typeKey || "unknown",
+      type: resolveActivityType((a as any).activityType?.typeKey || "unknown", (a as any).activityName),
       duration_minutes: Math.round(((a as any).duration || 0) / 60),
       intensity: avgHR ? (avgHR > 150 ? "high" : avgHR > 120 ? "medium" : "low") : null,
       calories: (a as any).calories || 0,
@@ -120,7 +128,7 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from("garmin_activities")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("date", date)
       .eq("type", record.type)
       .eq("duration_minutes", record.duration_minutes)
@@ -131,9 +139,45 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({
-    ok: true,
-    synced: stats,
-    since: { sleep: lastSleep, metrics: lastMetrics, activities: lastActivity },
-  });
+  return { stats, since: { sleep: lastSleep, metrics: lastMetrics, activities: lastActivity } };
+}
+
+// Manual sync — triggered by the refresh button in the Journal header, scoped to
+// the logged-in user's own session.
+export async function POST() {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  try {
+    const result = await runSync(supabase, user.id);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || "Sync failed" }, { status: 500 });
+  }
+}
+
+// Daily cron — Vercel sends a GET request and, since CRON_SECRET is set on the
+// project, an `Authorization: Bearer <CRON_SECRET>` header automatically. No
+// user session exists for a cron invocation, so this runs against the (single)
+// account on file via the service-role client instead.
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+  }
+
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+  const { data: tokenRow } = await admin.from("google_tokens").select("user_id").limit(1).single();
+  if (!tokenRow) return NextResponse.json({ error: "Aucun utilisateur" }, { status: 500 });
+
+  try {
+    const result = await runSync(admin, tokenRow.user_id);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || "Sync failed" }, { status: 500 });
+  }
 }

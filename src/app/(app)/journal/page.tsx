@@ -59,6 +59,7 @@ const moods = [
 const activityLabels: Record<string, string> = {
   cycling: "vélo", running: "course", strength_training: "muscu", windsurfing_v2: "windsurf",
   walking: "marche", hiking: "rando", swimming: "natation", yoga: "yoga", rowing: "rameur",
+  wingfoiling: "wing", open_water_swimming: "natation",
 };
 
 function localDate(d: Date): string {

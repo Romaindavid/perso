@@ -265,6 +265,17 @@ export default function RecapPage() {
     load();
   }, []);
 
+  // A backgrounded PWA tab can stay mounted for days without a real reload —
+  // refetch whenever the page becomes visible again so a new recap (or one
+  // generated from another device) actually shows up instead of a frozen view.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") load();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   useEffect(() => { setPeriodIndex(0); }, [kind]);
 
   const periods = useMemo(() => computePeriods(kind, recaps, today), [kind, recaps, today]);

@@ -19,7 +19,6 @@ Pour chaque jour de la période, tu reçois deux types de données :
 2. **Données structurées du jour** :
    - Sommeil (durée, qualité si disponible)
    - Activités sportives (type, durée/intensité)
-   - Tâches complétées (liste ou nombre)
    - Événements d'agenda (nature, densité de la journée)
 Historique des weekly_recaps des semaines précédentes (contexte).
 
@@ -31,7 +30,7 @@ Les données structurées ne sont PAS la matière première du récap — elles
 servent à éclairer et compléter le journal, jamais à le remplacer.
 - Si un jour n'a pas d'entrée de journal, tu peux mentionner ce qui s'est passé factuellement d'après les données structurées (ex. "peu de sommeil  le 28, agenda chargé"), mais sans interpréter ce que la personne en a  ressenti — tu ne le sais pas si elle ne l'a pas écrit.
 - Les données structurées peuvent nourrir un schéma détecté (ex. lien observé entre sommeil et ton des entrées) mais suivent exactement les mêmes règles que les schémas textuels : seulement si confirmé sur plusieurs semaines, jamais formulé en causalité, jamais mentionné s'il n'est vu que sur la période courante.
-- Ne cite jamais un chiffre brut (durée de sommeil, nombre de tâches)  dans les sections Meilleurs moments ou Questions à creuser — ces sections restent centrées sur le vécu exprimé, pas sur la donnée. Les chiffres peuvent apparaître dans Résumé de la période et Schémas  détectés, à titre de contexte factuel.
+- Ne cite jamais un chiffre brut (durée de sommeil, durée d'activité)  dans les sections Meilleurs moments ou Questions à creuser — ces sections restent centrées sur le vécu exprimé, pas sur la donnée. Les chiffres peuvent apparaître dans Résumé de la période et Schémas  détectés, à titre de contexte factuel.
 
 # Structure de sortie attendue
 
@@ -134,11 +133,6 @@ interface JournalEntry {
   mood: string | null;
 }
 
-interface CompletedTask {
-  completed_at: string;
-  content: string;
-}
-
 interface CalendarEvent {
   summary: string;
   start: string;
@@ -149,7 +143,6 @@ function buildDayBlock(
   journal: JournalEntry[],
   sleep: Sleep | undefined,
   activities: Activity[],
-  tasks: CompletedTask[],
   events: CalendarEvent[] | null
 ): string {
   const label = capitalize(new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "2-digit" }));
@@ -168,9 +161,6 @@ function buildDayBlock(
   }
   if (activities.length) {
     lines.push(`Sport : ${activities.map(a => `${a.type.replace(/_/g, " ")} ${a.duration_minutes} min${a.intensity ? ` (${a.intensity})` : ""}`).join(", ")}`);
-  }
-  if (tasks.length) {
-    lines.push(`Tâches complétées (${tasks.length}) : ${tasks.map(t => t.content).join(", ")}`);
   }
   if (events && events.length) {
     lines.push(`Agenda (${events.length} événement${events.length > 1 ? "s" : ""}) : ${events.map(e => e.summary).join(", ")}`);
@@ -199,15 +189,11 @@ export async function POST(request: Request) {
     { data: activities },
     { data: sleep },
     { data: journalEntries },
-    { data: completedTodos },
-    { data: completedTasks },
     { data: pastRecaps },
   ] = await Promise.all([
     supabase.from("garmin_activities").select("date, type, duration_minutes, intensity").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
     supabase.from("garmin_sleep").select("date, duration_hours, quality").gte("date", weekStartStr).lte("date", dateEnd).order("date"),
     supabase.from("journal_entries").select("created_at, content, mood").gte("created_at", weekStart.toISOString()).lte("created_at", nowIso).order("created_at"),
-    supabase.from("project_todos").select("content, completed_at").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
-    supabase.from("tasks").select("content, completed_at").eq("done", true).gte("completed_at", weekStart.toISOString()).lte("completed_at", nowIso),
     supabase.from("weekly_recaps").select("week_start, compact_summary, content").order("week_start", { ascending: false }).limit(8),
   ]);
 
@@ -238,12 +224,6 @@ export async function POST(request: Request) {
     activitiesByDate.set(a.date, [...(activitiesByDate.get(a.date) || []), a]);
   });
 
-  const tasksByDate = new Map<string, CompletedTask[]>();
-  [...(completedTodos || []), ...(completedTasks || [])].forEach((t: CompletedTask) => {
-    const d = t.completed_at.split("T")[0];
-    tasksByDate.set(d, [...(tasksByDate.get(d) || []), t]);
-  });
-
   const days = dateRange(weekStartStr, dateEnd);
   const dayBlocks = days.map(date =>
     buildDayBlock(
@@ -251,7 +231,6 @@ export async function POST(request: Request) {
       journalByDate.get(date) || [],
       sleepByDate.get(date),
       activitiesByDate.get(date) || [],
-      tasksByDate.get(date) || [],
       eventsByDate ? eventsByDate.get(date) || [] : null
     )
   );
@@ -259,9 +238,7 @@ export async function POST(request: Request) {
   const hasAnyData =
     (journalEntries?.length || 0) > 0 ||
     (activities?.length || 0) > 0 ||
-    (sleep?.length || 0) > 0 ||
-    (completedTodos?.length || 0) > 0 ||
-    (completedTasks?.length || 0) > 0;
+    (sleep?.length || 0) > 0;
 
   if (!hasAnyData) {
     return NextResponse.json({ error: "Aucune donnée cette semaine pour générer un récap" }, { status: 400 });

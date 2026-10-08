@@ -26,14 +26,6 @@ interface Sleep {
   quality: string | null;
 }
 
-interface CompletedTodo {
-  id: string;
-  content: string;
-  completed_at: string;
-  project_name?: string;
-  tag?: string;
-}
-
 interface CalendarEvent {
   summary: string;
 }
@@ -120,7 +112,6 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sleepData, setSleepData] = useState<Sleep[]>([]);
-  const [completedTodos, setCompletedTodos] = useState<CompletedTodo[]>([]);
   const [agendaByDate, setAgendaByDate] = useState<Record<string, CalendarEvent[]>>({});
   const [onThisDayEntries, setOnThisDayEntries] = useState<{ created_at: string; content: string }[]>([]);
   const [onThisDayYear, setOnThisDayYear] = useState<number | null>(null);
@@ -150,12 +141,10 @@ export default function JournalPage() {
 
   async function loadAll() {
     setLoading(true);
-    const [{ data: j }, { data: a }, { data: s }, { data: pt }, { data: tk }, { data: allJ }] = await Promise.all([
+    const [{ data: j }, { data: a }, { data: s }, { data: allJ }] = await Promise.all([
       supabase.from("journal_entries").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("garmin_activities").select("*").order("date", { ascending: false }).limit(100),
       supabase.from("garmin_sleep").select("*").order("date", { ascending: false }).limit(60),
-      supabase.from("project_todos").select("*, projects(name)").eq("done", true).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(50),
-      supabase.from("tasks").select("*").eq("done", true).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(50),
       supabase.from("journal_entries").select("created_at, content"),
     ]);
     setEntries(j || []);
@@ -163,14 +152,6 @@ export default function JournalPage() {
     setSleepData(s || []);
     setOnThisDayEntries(allJ || []);
 
-    const todos: CompletedTodo[] = [];
-    pt?.forEach((t: any) => {
-      todos.push({ id: t.id, content: t.content, completed_at: t.completed_at, project_name: t.projects?.name });
-    });
-    tk?.forEach((t: any) => {
-      if (t.completed_at) todos.push({ id: t.id, content: t.content, completed_at: t.completed_at, tag: t.tag });
-    });
-    setCompletedTodos(todos);
     setLoading(false);
 
     // Calendar events: recent window only, optional (silently empty if Google isn't connected)
@@ -213,7 +194,6 @@ export default function JournalPage() {
   entries.forEach(e => dates.add(e.created_at.split("T")[0]));
   activities.forEach(a => dates.add(a.date));
   sleepData.forEach(s => dates.add(s.date));
-  completedTodos.forEach(t => dates.add(t.completed_at.split("T")[0]));
 
   const sortedDates = Array.from(dates).sort((a, b) => b.localeCompare(a));
 
@@ -360,7 +340,6 @@ export default function JournalPage() {
         const dayEntries = entries.filter(e => e.created_at.split("T")[0] === date);
         const sleep = sleepByDate.get(date);
         const activity = activitiesByDate.get(date);
-        const dayTodos = completedTodos.filter(t => t.completed_at.split("T")[0] === date);
         const agenda = agendaByDate[date] || [];
 
         return (
@@ -430,15 +409,6 @@ export default function JournalPage() {
                 </div>
               )}
 
-              {dayTodos.map(todo => (
-                <div key={todo.id} className="bg-[#ffdf96] rounded-[22px] px-[18px] py-[15px] flex items-center gap-3">
-                  <span className="flex-none w-[22px] h-[22px] rounded-full bg-[#735802] text-[#fffbff] text-[11px] font-bold flex items-center justify-center">✓</span>
-                  <div className="flex-1">
-                    <p className="text-[13.5px] font-bold text-on-surface">{todo.content}</p>
-                    <p className="text-[11.5px] text-[#735802] mt-0.5">{todo.project_name || todo.tag || "Tâche"}</p>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         );
